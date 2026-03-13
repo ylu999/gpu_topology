@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>GPU Cluster Topology</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#070c18;color:#e2e8f0;font-family:'SF Mono',Consolas,monospace;overflow:hidden;width:100vw;height:100vh;user-select:none}
+canvas{display:block;cursor:grab}
+canvas.dragging{cursor:grabbing}
+canvas.pointer{cursor:pointer}
+#ui{position:fixed;inset:0;pointer-events:none;z-index:10}
+#title{position:absolute;top:16px;left:18px}
+#title h1{font-size:13px;font-weight:600;letter-spacing:.1em;color:#60a5fa;text-transform:uppercase}
+#title p{font-size:10px;color:#475569;margin-top:2px}
+.panel{background:rgba(7,12,24,0.93);border:1px solid rgba(255,255,255,0.13);border-radius:8px;padding:10px 12px;backdrop-filter:blur(10px);pointer-events:all}
+#ctrl{position:absolute;top:16px;right:16px;display:flex;flex-direction:column;gap:8px}
+.cl{font-size:9px;color:#475569;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px}
+.zrow{display:flex;gap:4px}
+.zbtn{background:#111827;border:1px solid rgba(255,255,255,0.15);color:#e2e8f0;width:28px;height:28px;border-radius:4px;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;transition:background .12s}
+.zbtn:hover{background:#3b82f6;border-color:#3b82f6}
+.lbtn{display:flex;align-items:center;gap:7px;padding:5px 7px;border-radius:4px;cursor:pointer;font-size:10px;color:#94a3b8;border:1px solid transparent;background:none;width:100%;text-align:left;transition:background .12s}
+.lbtn:hover{background:rgba(255,255,255,0.04)}
+.lbtn.on{color:#e2e8f0;background:rgba(59,130,246,0.1);border-color:rgba(59,130,246,0.28)}
+.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.lnkbtn{display:flex;align-items:center;gap:7px;padding:5px 7px;border-radius:4px;cursor:pointer;font-size:10px;color:#94a3b8;background:none;width:100%;text-align:left;transition:background .12s}
+.lnkbtn:hover{background:rgba(255,255,255,0.04)}
+.lnkbtn.on{color:#e2e8f0}
+.lnkline{width:22px;height:3px;flex-shrink:0;border-radius:2px}
+#legend{position:absolute;bottom:16px;left:16px;min-width:192px}
+#legend h3{font-size:9px;color:#475569;text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px}
+.ls{margin-bottom:8px}
+.ls h4{font-size:8px;color:#334155;text-transform:uppercase;margin-bottom:4px}
+.li{display:flex;align-items:center;gap:7px;font-size:10px;color:#94a3b8;margin:3px 0}
+.lb{width:11px;height:11px;border-radius:2px;flex-shrink:0}
+#info{position:absolute;bottom:16px;right:16px;max-width:270px;display:none}
+#info h3{font-size:12px;color:#60a5fa;margin-bottom:8px}
+.irow{display:flex;justify-content:space-between;margin:3px 0;font-size:10px}
+.ikey{color:#475569}
+.ival{color:#e2e8f0;font-weight:500;text-align:right;max-width:158px}
+.idesc{font-size:10px;color:#94a3b8;margin-top:8px;line-height:1.65;border-top:1px solid rgba(255,255,255,0.08);padding-top:8px}
+.erow{display:flex;justify-content:space-between;gap:8px;margin:2px 0;font-size:10px}
+.ekey{color:#475569;white-space:nowrap}
+.eval{color:#e2e8f0;font-weight:500;text-align:right}
+#zlvl{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(7,12,24,0.8);border:1px solid rgba(255,255,255,0.08);border-radius:20px;padding:4px 14px;font-size:10px;color:#475569;pointer-events:none}
+#lodlabel{position:absolute;top:52px;left:50%;transform:translateX(-50%);background:rgba(59,130,246,0.14);border:1px solid rgba(59,130,246,0.3);border-radius:20px;padding:3px 14px;font-size:10px;color:#93c5fd;pointer-events:none}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="ui">
+  <div id="title">
+    <h1>GPU Cluster Topology</h1>
+    <p>纯 Canvas · 无限缩放 · 拖动平移 · 点击组件查看详情</p>
+  </div>
+  <div id="ctrl">
+    <div class="panel">
+      <div class="cl">缩放</div>
+      <div class="zrow">
+        <button class="zbtn" onclick="doZoom(1.3)">+</button>
+        <button class="zbtn" onclick="doZoom(1/1.3)">−</button>
+        <button class="zbtn" onclick="goLayer('zone')" title="重置视图">⌂</button>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="cl">层级跳转</div>
+      <button class="lbtn on" id="lb-zone" onclick="goLayer('zone')"><span class="dot" style="background:#3b82f6"></span>Zone 可用区</button>
+      <button class="lbtn"    id="lb-pod"  onclick="goLayer('pod')"> <span class="dot" style="background:#8b5cf6"></span>Pod 集群组</button>
+      <button class="lbtn"    id="lb-rack" onclick="goLayer('rack')"><span class="dot" style="background:#06b6d4"></span>Rack 机架</button>
+      <button class="lbtn"    id="lb-node" onclick="goLayer('node')"><span class="dot" style="background:#22c55e"></span>Node 节点</button>
+      <button class="lbtn"    id="lb-chip" onclick="goLayer('chip')"><span class="dot" style="background:#f97316"></span>GPU/CPU 芯片</button>
+    </div>
+    <div class="panel">
+      <div class="cl">链路显示</div>
+      <button class="lnkbtn on" id="lk-nvlink" onclick="togLink('nvlink')"><div class="lnkline" style="background:#f97316"></div>NVLink 900 GB/s</button>
+      <button class="lnkbtn on" id="lk-pcie"   onclick="togLink('pcie')">  <div class="lnkline" style="background:#8b5cf6"></div>PCIe Gen5 128 GB/s</button>
+      <button class="lnkbtn on" id="lk-ib"     onclick="togLink('ib')">    <div class="lnkline" style="background:#06b6d4"></div>InfiniBand NDR 400G</button>
+      <button class="lnkbtn on" id="lk-eth"    onclick="togLink('eth')">   <div class="lnkline" style="background:#22c55e"></div>Ethernet / TCP</button>
+    </div>
+  </div>
+  <div id="legend" class="panel">
+    <h3>图例</h3>
+    <div class="ls"><h4>组件</h4>
+      <div class="li"><div class="lb" style="background:#f97316"></div>GPU H100 SXM5</div>
+      <div class="li"><div class="lb" style="background:#3b82f6"></div>CPU EPYC 9654</div>
+      <div class="li"><div class="lb" style="background:#8b5cf6;border-radius:50%"></div>NVSwitch</div>
+      <div class="li"><div class="lb" style="background:#0e7490"></div>HBM3 显存</div>
+      <div class="li"><div class="lb" style="background:#064e3b"></div>IB NIC (ConnectX-7)</div>
+      <div class="li"><div class="lb" style="background:#06b6d4;border-radius:3px"></div>ToR Switch</div>
+      <div class="li"><div class="lb" style="background:#22c55e;border-radius:3px"></div>Spine / Core</div>
+    </div>
+    <div class="ls"><h4>通信协议</h4>
+      <div class="li"><div style="width:22px;height:3px;background:#f97316;border-radius:1px;flex-shrink:0"></div>NVLink 4.0</div>
+      <div class="li"><div style="width:22px;height:2px;background:#8b5cf6;flex-shrink:0"></div>PCIe Gen5</div>
+      <div class="li"><div style="width:22px;height:2px;background:#06b6d4;flex-shrink:0"></div>InfiniBand NDR</div>
+      <div class="li"><div style="width:22px;height:1px;background:#22c55e;flex-shrink:0"></div>Ethernet TCP/IP</div>
+    </div>
+  </div>
+  <div id="info" class="panel">
+    <h3 id="i-title"></h3>
+    <div id="i-rows"></div>
+    <div id="i-desc" class="idesc"></div>
+  </div>
+  <!-- Edge hover tooltip -->
+  <div id="etip" style="position:absolute;display:none;max-width:230px;pointer-events:none">
+    <div class="panel" style="padding:8px 11px">
+      <div id="et-head" style="font-size:11px;font-weight:600;color:#60a5fa;margin-bottom:6px"></div>
+      <div id="et-rows"></div>
+      <div id="et-use" style="font-size:9px;color:#64748b;margin-top:6px;line-height:1.6;border-top:1px solid rgba(255,255,255,0.06);padding-top:5px"></div>
+    </div>
+  </div>
+  <div id="zlvl">缩放: 100%</div>
+  <div id="lodlabel">Zone 视图</div>
+</div>
+<script>
+// ─── EDGE METADATA ───────────────────────────────────────────────────────────
+const EDGE_META={
+  nvlink:{
+    protocol:'NVLink 4.0',
+    bw:'900 GB/s 双向 (单 GPU)',
+    total_bw:'900 GB/s × 18 lane',
+    latency:'< 1 μs',
+    encoding:'PAM4 NRZ',
+    use:'节点内 GPU All-to-All 训练数据面；AllReduce/AllGather 不经 CPU',
+    color:'rgba(249,115,22,0.85)',
+  },
+  pcie:{
+    protocol:'PCIe Gen5 x16',
+    bw:'128 GB/s 双向',
+    latency:'1–4 μs',
+    encoding:'128b/130b',
+    use:'GPU→CPU 控制调度；NIC→GPU GPUDirect DMA 通道；NVSwitch mgmt',
+    color:'rgba(139,92,246,0.85)',
+  },
+  upi:{
+    protocol:'AMD Infinity Fabric / Intel UPI',
+    bw:'~340 GB/s (EPYC)',
+    latency:'~100 ns',
+    use:'双路 CPU 共享内存；NUMA 跨 socket 访问',
+    color:'rgba(147,197,253,0.85)',
+  },
+  ib:{
+    protocol:'InfiniBand NDR 400Gb/s',
+    bw:'400 Gb/s = 50 GB/s 单 link',
+    node_total:'3.2 Tb/s (8 NIC × 400G)',
+    latency:'< 600 ns MPI level',
+    rdma:'GPUDirect RDMA — 零拷贝',
+    encoding:'64b/66b',
+    use:'跨节点 RDMA 训练通信；8 NIC 绑定实现每节点 3.2 Tb/s，不经 CPU',
+    color:'rgba(6,182,212,0.85)',
+  },
+  eth:{
+    protocol:'Ethernet 400GbE',
+    bw:'400 Gb/s',
+    latency:'~5–10 μs TCP',
+    use:'跨 Pod 路由；连接 Lustre/FSx/S3 存储；管控面 + 外网出口',
+    color:'rgba(34,197,94,0.85)',
+  },
+  ib_node_tor:{
+    protocol:'InfiniBand NDR 400Gb/s',
+    bw:'400 Gb/s per NIC',
+    node_total:'8× = 3.2 Tb/s per node',
+    latency:'< 600 ns',
+    use:'Node → ToR RDMA；每 GPU 独享一条 400G link (GPUDirect)',
+    color:'rgba(6,182,212,0.85)',
+  },
+  ib_tor_spine:{
+    protocol:'InfiniBand NDR 400Gb/s',
+    bw:'4× 400G ECMP 上联',
+    topo:'Fat-Tree leaf-spine，1:1 无阻塞',
+    latency:'100–300 ns switch',
+    use:'Pod 内 non-blocking 汇聚；保障 AllReduce 不出现热点拥塞',
+    color:'rgba(6,182,212,0.85)',
+  },
+};
+
+// EDGES array: filled at draw time, cleared each frame
+// Each: {x1,y1,x2,y2,type,lod_min}
+let EDGES=[];
+
+function pushEdge(x1,y1,x2,y2,type,lod_min=0){
+  EDGES.push({x1,y1,x2,y2,type,lod_min});
+}
+
+// Point-to-segment distance (screen coords)
+function ptSegDist(px,py, x1,y1,x2,y2){
+  const dx=x2-x1,dy=y2-y1;
+  const len2=dx*dx+dy*dy;
+  if(len2===0)return Math.hypot(px-x1,py-y1);
+  let t=((px-x1)*dx+(py-y1)*dy)/len2;
+  t=Math.max(0,Math.min(1,t));
+  return Math.hypot(px-(x1+t*dx),py-(y1+t*dy));
+}
+
+function hitEdge(sx,sy){
+  // sx,sy: screen coords
+  const THR=7; // px
+  for(let i=EDGES.length-1;i>=0;i--){
+    const e=EDGES[i];
+    if(getLOD(camS)<e.lod_min)continue;
+    // convert world edge to screen
+    const ex1=(e.x1+camX)*camS+W/2, ey1=(e.y1+camY)*camS+H/2;
+    const ex2=(e.x2+camX)*camS+W/2, ey2=(e.y2+camY)*camS+H/2;
+    if(ptSegDist(sx,sy,ex1,ey1,ex2,ey2)<THR)return e.type;
+  }
+  return null;
+}
+
+function showEdgeTip(type, sx, sy){
+  const m=EDGE_META[type];
+  if(!m)return;
+  const el=document.getElementById('etip');
+  const head=document.getElementById('et-head');
+  const rows=document.getElementById('et-rows');
+  const use=document.getElementById('et-use');
+
+  head.textContent=m.protocol;
+  head.style.color=m.color.replace(/[\d.]+\)$/,'1)');
+
+  const skip=new Set(['protocol','use','color']);
+  const labels={bw:'带宽',total_bw:'总带宽',node_total:'节点总带宽',latency:'延迟',encoding:'编码',rdma:'RDMA',topo:'拓扑'};
+  rows.innerHTML=Object.entries(m)
+    .filter(([k])=>!skip.has(k))
+    .map(([k,v])=>`<div class="erow"><span class="ekey">${labels[k]||k}</span><span class="eval">${v}</span></div>`)
+    .join('');
+  use.textContent=m.use;
+
+  // position: follow mouse, avoid edge bleed
+  const PAD=14, W_TIP=230;
+  let lx=sx+PAD, ly=sy-20;
+  if(lx+W_TIP>window.innerWidth) lx=sx-W_TIP-PAD;
+  if(ly<0) ly=sy+PAD;
+  el.style.left=lx+'px';
+  el.style.top=ly+'px';
+  el.style.display='block';
+}
+
+function hideEdgeTip(){
+  document.getElementById('etip').style.display='none';
+}
+
+// ─── INFO ────────────────────────────────────────────────────────────────────
+const INFO={
+  gpu:{title:'GPU — NVIDIA H100 SXM5',rows:[['型号','H100 SXM5'],['显存','80 GB HBM3'],['显存带宽','3.35 TB/s'],['FP16算力','~1979 TFLOPS'],['NVLink','900 GB/s 双向'],['PCIe','Gen5 x16'],['TDP','700 W']],desc:'GPU是集群核心，负责矩阵乘法和张量运算。8块H100通过NVSwitch以NVLink全互联，Any-to-Any带宽均为900GB/s，等效为单台640GB显存的超级GPU。'},
+  cpu:{title:'CPU — AMD EPYC 9654 × 2',rows:[['核心数','96核/192线程 per socket'],['系统内存','2 TB DDR5'],['PCIe','128条 Gen5 通道'],['作用','调度·预处理·通信初始化']],desc:'CPU负责控制面：数据加载、CUDA Kernel调度、NCCL初始化。计算密集部分完全由GPU承担，CPU主要用于编排和DMA缓冲。'},
+  nvswitch:{title:'NVSwitch — 节点内 GPU 互联',rows:[['协议','NVLink 4.0'],['带宽','900 GB/s 全双工'],['延迟','< 1 μs'],['拓扑','全连接 All-to-All'],['数量','4片 / DGX H100']],desc:'将节点内8块GPU连成全互联Fabric，AllReduce不经CPU/PCIe直接完成，速度接近显存带宽上限，是节点内通信的核心。'},
+  hbm:{title:'HBM3 — 高带宽显存',rows:[['类型','HBM3'],['容量','80 GB per GPU'],['带宽','3.35 TB/s'],['堆叠','8层 Die Stack'],['位宽','5120-bit']],desc:'HBM采用3D堆叠封装集成在GPU基板，比GDDR6带宽高5倍。显存带宽是大模型Attention计算的关键瓶颈，直接决定序列长度和批大小上限。'},
+  nic:{title:'IB NIC — ConnectX-7 RDMA',rows:[['型号','Mellanox ConnectX-7'],['协议','InfiniBand NDR / RoCEv2'],['带宽','400 Gb/s 双向'],['延迟','< 600 ns'],['数量','8块/节点 = 3.2 Tb/s']],desc:'每GPU配一块400G NIC，支持GPUDirect RDMA——GPU显存数据无需经CPU直接通过NIC传输。8块NIC并联形成3.2Tb/s总带宽，保证AllReduce不成瓶颈。'},
+  tor:{title:'ToR Switch — 机顶交换机',rows:[['位置','每Rack顶部'],['协议','InfiniBand NDR 400Gb/s'],['端口','64口 QSFP-DD'],['延迟','100~300 ns'],['上联','4×400G ECMP → Spine']],desc:'汇聚机架内节点的RDMA流量，GPUDirect RDMA让GPU显存数据不经CPU直达网络。下行连所有节点NIC，上行ECMP多路并联接Spine。'},
+  spine:{title:'Spine Switch — 汇聚层',rows:[['协议','InfiniBand NDR/HDR'],['拓扑','Fat-Tree'],['收敛比','1:1 无阻塞'],['型号','NVIDIA Quantum-2 QM9700']],desc:'Pod内无阻塞全带宽Fat-Tree交换，保证跨机架AllReduce不产生热点拥塞，是大规模训练通信质量的核心保障。'},
+  core:{title:'Core Router — 核心路由层',rows:[['协议','Ethernet 400GbE'],['功能','跨Pod路由'],['连接','FSx/Lustre · S3 · 外网'],['TCP/IP','管控面和存储面']],desc:'Zone级别跨Pod路由和南北向流量，协议从高性能IB切换为标准TCP/IP。连接Lustre/FSx文件系统和S3——训练数据流入，Checkpoint写出。'},
+  node:{title:'Compute Node — DGX H100',rows:[['GPU','8× H100 SXM5 80GB'],['CPU','2× EPYC 9654'],['系统内存','2 TB DDR5'],['NIC','8× CX-7 400Gb/s'],['NVSwitch','4片全互联'],['峰值算力','~15.8 PFLOPS FP8']],desc:'DGX H100是最小训练单元：8GPU通过NVSwitch全互联，每GPU独享400G NIC。单节点总显存640GB，IB总带宽3.2Tb/s，是目前最高密度AI训练服务器。'},
+  rack:{title:'Rack — 机架',rows:[['高度','42U 标准机架'],['节点数','2 台（本图示）'],['GPU密度','16 GPU/架'],['供电','30~60 kW/架'],['散热','液冷 Direct Water Cooling']],desc:'机架承载节点和ToR交换机。液冷管路直接对GPU散热，功率密度从风冷15kW提升至60kW+，是支撑H100高TDP的基础设施关键。'},
+  pod:{title:'Pod — 集群组',rows:[['规模','3~5 Rack，256~640 GPU'],['内部网络','InfiniBand Fat-Tree'],['收敛比','1:1 全带宽无阻塞'],['用途','单个大型训练作业域']],desc:'Pod是资源调度和网络隔离的基本域，同Pod内GPU通过IB Fat-Tree超低延迟通信，适合运行单个大规模分布式训练作业（如LLM预训练）。'},
+  zone:{title:'Availability Zone — 可用区',rows:[['GPU规模','35,000+ GPU'],['网络架构','三层 Spine-Leaf + Core'],['存储','FSx Lustre / EFS / S3'],['冗余','独立供电 + 双路制冷']],desc:'可用区是物理数据中心独立分区，拥有独立供电和制冷系统。大型云厂商在单AZ内部署万卡级别集群。跨AZ通过DCI互联，延迟较高，通常仅用于灾备，不参与训练通信。'},
+};
+function showInfo(type){
+  const p=document.getElementById('info'),info=INFO[type];
+  if(!info){p.style.display='none';return}
+  p.style.display='block';
+  document.getElementById('i-title').textContent=info.title;
+  document.getElementById('i-rows').innerHTML=info.rows.map(([k,v])=>`<div class="irow"><span class="ikey">${k}</span><span class="ival">${v}</span></div>`).join('');
+  document.getElementById('i-desc').textContent=info.desc;
+}
+
+// ─── LAYOUT ──────────────────────────────────────────────────────────────────
+// Node inner layout (all in world-px):
+//   y+0..y+NH (NH=116)
+//   Header row y+6..y+30:  CPU0(x+4,6,44,24)  CPU1(x+52,6,44,24)  NVSw circle(x+118,18,r=11)  HBM(x+134,8,28,18)  NIC(x+166,8,46,18)
+//   GPU row1   y+36..y+64: G0(x+4) G1(x+56) G2(x+108) G3(x+160)  each 48×28
+//   GPU row2   y+72..y+100: G4 G5 G6 G7
+// Total: max y = 100, + 16 padding = 116 ✓
+const NW=260, NH=170;
+const GW=54,  GH=26;   // GPU
+const CW=52,  CH=22;   // CPU
+const RACK_PX=8, RACK_PT=30, RACK_NG=14;
+const RACK_W=NW+RACK_PX*2;   // 276
+const RACK_H=RACK_PT+NH*2+RACK_NG+10;  // 30+340+14+10=394
+const POD_GAP=16, POD_PX=20, POD_PT=34, POD_PB=64;
+const INTER_POD=44;
+function podW(n){return POD_PX*2+n*RACK_W+(n-1)*POD_GAP}
+function podH(){return POD_PT+RACK_H+POD_PB}
+
+const podDefs=[
+  {id:'pod0',name:'Pod A — Training',  n:5,fill:'rgba(28,24,70,0.55)',  stroke:'rgba(139,92,246,0.25)'},
+  {id:'pod1',name:'Pod B — Training',  n:5,fill:'rgba(26,22,20,0.55)',  stroke:'rgba(139,92,246,0.25)'},
+  {id:'pod2',name:'Pod C — Inference', n:3,fill:'rgba(18,38,25,0.55)',  stroke:'rgba(34,197,94,0.22)'},
+];
+const PODS=[],RACKS=[],NODES=[],SWITCHES=[];
+let cx2=0;
+podDefs.forEach((pd,pi)=>{
+  const pw=podW(pd.n),ph=podH();
+  const pod={...pd,x:cx2,y:0,w:pw,h:ph,rackIds:[]};
+  PODS.push(pod);
+  for(let ri=0;ri<pd.n;ri++){
+    const rx=cx2+POD_PX+ri*(RACK_W+POD_GAP),ry=POD_PT;
+    const rid=`${pd.id}_r${ri}`;
+    const rack={id:rid,podId:pd.id,name:`Rack ${String.fromCharCode(65+pi)}-0${ri+1}`,x:rx,y:ry,w:RACK_W,h:RACK_H,nodeIds:[]};
+    RACKS.push(rack);pod.rackIds.push(rid);
+    for(let ni=0;ni<2;ni++){
+      const nid=`${rid}_n${ni}`;
+      NODES.push({id:nid,rackId:rid,name:`Node ${ri+1}-0${ni+1}`,x:rx+RACK_PX,y:ry+RACK_PT+ni*(NH+RACK_NG),w:NW,h:NH});
+      rack.nodeIds.push(nid);
+    }
+    SWITCHES.push({id:`tor_${rid}`,type:'tor',rackId:rid,cx:rx+RACK_W/2,cy:ry+RACK_H+28});
+  }
+  SWITCHES.push({id:`spine_${pd.id}`,type:'spine',podId:pd.id,cx:cx2+pw/2,cy:-54,w:pw*0.45,h:20});
+  cx2+=pw+INTER_POD;
+});
+const AW=cx2-INTER_POD,AH=podH();
+const OX=-AW/2,OY=-AH/2-30;
+PODS.forEach(p=>{p.x+=OX;p.y+=OY});
+RACKS.forEach(r=>{r.x+=OX;r.y+=OY+POD_PT});
+NODES.forEach(n=>{n.x+=OX;n.y+=OY+POD_PT});
+SWITCHES.forEach(s=>{s.cx+=OX;s.cy=s.cy<0?s.cy+OY:s.cy+OY+POD_PT});
+const coreY=Math.min(...SWITCHES.filter(s=>s.type==='spine').map(s=>s.cy))-52;
+SWITCHES.push({id:'core',type:'core',cx:OX+AW/2,cy:coreY,w:82,h:22});
+const ZONE={x:OX-70,y:OY-90,w:AW+140,h:AH+170};
+
+// ─── CANVAS & CAMERA ─────────────────────────────────────────────────────────
+const canvas=document.getElementById('cv');
+const ctx=canvas.getContext('2d');
+let W,H;
+function resize(){W=canvas.width=innerWidth;H=canvas.height=innerHeight;draw()}
+window.addEventListener('resize',resize);
+
+// Camera state
+let camX=0,camY=0,camS=1;     // current (used for drawing)
+let tgtX=0,tgtY=0,tgtS=1;     // animation target
+let animRaf=null;
+
+function s2w(sx,sy){return{x:(sx-W/2)/camS-camX,y:(sy-H/2)/camS-camY}}
+
+function easeInOut(t){return t<.5?2*t*t:-1+(4-2*t)*t}
+function animateTo(tx,ty,ts,dur=420){
+  const sx=camX,sy=camY,ss=camS;
+  tgtX=tx;tgtY=ty;tgtS=ts;
+  const t0=performance.now();
+  if(animRaf)cancelAnimationFrame(animRaf);
+  function step(now){
+    const t=Math.min(1,(now-t0)/dur);
+    const e=easeInOut(t);
+    camX=sx+(tx-sx)*e;camY=sy+(ty-sy)*e;camS=ss+(ts-ss)*e;
+    draw();updateHUD();
+    if(t<1)animRaf=requestAnimationFrame(step);
+  }
+  animRaf=requestAnimationFrame(step);
+}
+function fitBox(x,y,w,h,pad=60){
+  const sc=Math.min(W/(w+pad*2),H/(h+pad*2));
+  animateTo(-(x+w/2),-(y+h/2),sc);
+}
+function doZoom(f){
+  const ns=Math.max(.04,Math.min(20,tgtS*f));
+  animateTo(tgtX,tgtY,ns,200);
+}
+
+// Link visibility
+const lv={nvlink:true,pcie:true,ib:true,eth:true};
+function togLink(t){
+  lv[t]=!lv[t];
+  document.getElementById('lk-'+t).classList.toggle('on',lv[t]);
+  draw();
+}
+
+// ─── LOD ─────────────────────────────────────────────────────────────────────
+// Strictly exclusive rendering per zoom level — no overlap possible:
+//   LOD 0  camS < 0.12   draw: zone label only
+//   LOD 1  0.12–0.28     draw: pods
+//   LOD 2  0.28–0.55     draw: pods + racks + switches
+//   LOD 3  0.55–1.6      draw: racks + nodes(mini) + switches
+//   LOD 4  > 1.6         draw: nodes(bg only) + chips(full detail) + switches
+function getLOD(s){
+  if(s<0.12)return 0;
+  if(s<0.28)return 1;
+  if(s<0.55)return 2;
+  if(s<1.6) return 3;
+  return 4;
+}
+const LOD_NAMES=['Zone','Pod','Rack','Node','Chip'];
+
+function updateHUD(){
+  document.getElementById('zlvl').textContent=`缩放: ${Math.round(camS*100)}%`;
+  document.getElementById('lodlabel').textContent=LOD_NAMES[getLOD(camS)]+' 视图';
+}
+
+// ─── DRAW PRIMITIVES ─────────────────────────────────────────────────────────
+function rr(x,y,w,h,r=4){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath();
+}
+function fillStroke(fill,stroke,lw=1){ctx.fillStyle=fill;ctx.fill();ctx.strokeStyle=stroke;ctx.lineWidth=lw;ctx.stroke()}
+function txt(s,x,y,sz,col,align='center',base='middle',bold=false){
+  // sz is in SCREEN pixels — always readable regardless of zoom
+  // x,y are world coords; we convert to screen coords and bypass the transform
+  const sx=(x+camX)*camS+W/2, sy=(y+camY)*camS+H/2;
+  ctx.save();
+  ctx.resetTransform();
+  ctx.font=`${bold?'600 ':''}${sz}px "SF Mono",Consolas,monospace`;
+  ctx.fillStyle=col;ctx.textAlign=align;ctx.textBaseline=base;
+  ctx.fillText(s,sx,sy);
+  ctx.restore();
+}
+function line(x1,y1,x2,y2,col,w,dash=[]){
+  ctx.save();ctx.strokeStyle=col;ctx.lineWidth=w;ctx.setLineDash(dash);
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+  ctx.setLineDash([]);ctx.restore();
+}
+
+// ─── DRAW SECTIONS ───────────────────────────────────────────────────────────
+function drawGrid(){
+  const step=200,lw=1/camS;
+  const tl=s2w(0,0),br=s2w(W,H);
+  ctx.strokeStyle='rgba(255,255,255,0.018)';ctx.lineWidth=lw;
+  const x0=Math.floor(tl.x/step)*step,y0=Math.floor(tl.y/step)*step;
+  for(let x=x0;x<br.x;x+=step){ctx.beginPath();ctx.moveTo(x,tl.y);ctx.lineTo(x,br.y);ctx.stroke()}
+  for(let y=y0;y<br.y;y+=step){ctx.beginPath();ctx.moveTo(tl.x,y);ctx.lineTo(br.x,y);ctx.stroke()}
+}
+
+function drawZone(){
+  const z=ZONE;
+  rr(z.x,z.y,z.w,z.h,18);
+  fillStroke('rgba(59,130,246,0.022)','rgba(59,130,246,0.2)',1.5/camS);
+  // dash
+  ctx.save();rr(z.x,z.y,z.w,z.h,18);ctx.strokeStyle='rgba(59,130,246,0.2)';ctx.lineWidth=1.5/camS;ctx.setLineDash([8/camS,5/camS]);ctx.stroke();ctx.setLineDash([]);ctx.restore();
+}
+
+function drawZoneLabel(){
+  const z=ZONE,lod=getLOD(camS);
+  if(lod<2){
+    txt('Availability Zone',z.x+16,z.y+18,18,'rgba(147,197,253,0.55)','left',undefined,true);
+    txt('35,000+ GPU · 3 Pods · InfiniBand Fat-Tree + Ethernet Core',z.x+16,z.y+42,12,'rgba(147,197,253,0.25)','left');
+  }
+}
+
+function drawPods(){
+  PODS.forEach(p=>{
+    rr(p.x,p.y,p.w,p.h,10);
+    fillStroke(p.fill,p.stroke,0.9/camS);
+    txt(p.name,p.x+12,p.y+18,14,'rgba(196,181,253,0.85)','left',undefined,true);
+  });
+}
+
+function drawRacks(){
+  RACKS.forEach(r=>{
+    rr(r.x,r.y,r.w,r.h,5);
+    fillStroke('rgba(6,182,212,0.05)','rgba(6,182,212,0.22)',0.7/camS);
+    txt(r.name,r.x+r.w/2,r.y+14,12,'rgba(103,232,249,0.8)');
+  });
+}
+
+function drawSwitches(){
+  const spines=SWITCHES.filter(s=>s.type==='spine');
+  const core=SWITCHES.find(s=>s.type==='core');
+  const tors=SWITCHES.filter(s=>s.type==='tor');
+
+  // Links first (behind symbols)
+  if(lv.eth&&core) spines.forEach(sp=>{
+    line(sp.cx,sp.cy,core.cx,core.cy,'rgba(34,197,94,0.3)',1.2/camS,[6/camS,3/camS]);
+    pushEdge(sp.cx,sp.cy,core.cx,core.cy,'eth');
+  });
+  if(lv.ib) tors.forEach(tor=>{
+    const rack=RACKS.find(r=>r.id===tor.rackId);
+    if(!rack)return;
+    const sp=spines.find(s=>s.podId===rack.podId);
+    if(sp){
+      line(tor.cx,tor.cy,sp.cx,sp.cy,'rgba(6,182,212,0.32)',1/camS);
+      pushEdge(tor.cx,tor.cy,sp.cx,sp.cy,'ib_tor_spine');
+    }
+  });
+  if(lv.ib&&camS>0.3) tors.forEach(tor=>{
+    const rack=RACKS.find(r=>r.id===tor.rackId);
+    if(!rack)return;
+    NODES.filter(n=>n.rackId===rack.id).forEach(nd=>{
+      line(nd.x+nd.w/2,nd.y+nd.h,tor.cx,tor.cy,'rgba(6,182,212,0.16)',0.6/camS);
+      pushEdge(nd.x+nd.w/2,nd.y+nd.h,tor.cx,tor.cy,'ib_node_tor',2);
+    });
+  });
+
+  // Symbols
+  if(core){
+    rr(core.cx-core.w/2,core.cy-core.h/2,core.w,core.h,4);
+    fillStroke('rgba(34,197,94,0.22)','rgba(34,197,94,0.7)',1/camS);
+    txt('Core Router',core.cx,core.cy,11,'#86efac');
+  }
+  spines.forEach(sp=>{
+    rr(sp.cx-sp.w/2,sp.cy-sp.h/2,sp.w,sp.h,4);
+    fillStroke('rgba(34,197,94,0.14)','rgba(34,197,94,0.45)',0.9/camS);
+    txt(sp.podId.replace('pod','Pod '),sp.cx,sp.cy,10,'rgba(134,239,172,0.85)');
+  });
+  if(camS>0.2) tors.forEach(tor=>{
+    const r=13/camS;
+    ctx.beginPath();ctx.arc(tor.cx,tor.cy,r,0,Math.PI*2);
+    fillStroke('rgba(6,182,212,0.16)','rgba(6,182,212,0.65)',0.9/camS);
+    if(camS>0.2)txt('ToR',tor.cx,tor.cy,10,'#67e8f9');
+  });
+}
+
+// LOD 3: nodes with mini chips (no real chips drawn here)
+function drawNodesMini(){
+  NODES.forEach(nd=>{
+    // Node bg
+    rr(nd.x,nd.y,nd.w,nd.h,4);
+    fillStroke('rgba(12,18,36,0.97)','rgba(34,197,94,0.32)',0.7/camS);
+    txt(nd.name,nd.x+5,nd.y+6,11,'rgba(134,239,172,0.8)','left',undefined,true);
+    txt('8× H100',nd.x+nd.w-4,nd.y+6,11,'rgba(251,146,60,0.65)','right');
+
+    // CPU mini blocks
+    [0,1].forEach(c=>{
+      rr(nd.x+4+c*50,nd.y+7,42,20,2);
+      fillStroke('rgba(59,130,246,0.55)','rgba(59,130,246,0.4)',0.35/camS);
+    });
+
+    // GPU mini blocks — 4×2, each sized to fit node
+    const gw=Math.floor((nd.w-16)/4)-4;   // ~50-4=46… but NW=220 → (220-16)/4-4=47
+    const gh=Math.floor((nd.h-40)/2)-5;   // (116-40)/2-5=33
+    for(let g=0;g<8;g++){
+      const col=g%4,row=Math.floor(g/4);
+      const gx=nd.x+6+col*(gw+4),gy=nd.y+34+row*(gh+5);
+      rr(gx,gy,gw,gh,2);
+      fillStroke('rgba(249,115,22,0.62)','rgba(249,115,22,0.45)',0.4/camS);
+      txt(`G${g}`,gx+gw/2,gy+gh/2,10,'rgba(255,255,255,0.85)');
+    }
+
+    // NVLink lines between GPUs (mini)
+    if(lv.nvlink){
+      const gw2=Math.floor((nd.w-16)/4)-4,gh2=Math.floor((nd.h-40)/2)-5;
+      ctx.strokeStyle='rgba(249,115,22,0.3)';ctx.lineWidth=0.7/camS;
+      for(let row=0;row<2;row++){
+        for(let col=0;col<3;col++){
+          const x1=nd.x+6+(col+1)*(gw2+4),y1=nd.y+34+row*(gh2+5)+gh2/2;
+          ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x1+4,y1);ctx.stroke();
+        }
+      }
+    }
+  });
+}
+
+// LOD 4: chip detail — accurate connections
+// ─── Node layout (NW=260, NH=170) ──────────────────────────────────────────
+//  y+0..16   : title
+//  y+18..40  : CPU0(x+4)  CPU1(x+60)   [CPU-CPU UPI link]
+//  y+48..68  : 4× NVSwitch  cx=[30,95,160,225]  cy=58  r=10
+//              [each SW → CPU0/CPU1 via PCIe mgmt line]
+//  y+76..102 : GPU G0-G3   stride=64   [each GPU: NVLink→all4SW, PCIe→CPU, HBM tag inside]
+//  y+114..140: GPU G4-G7
+//  y+146..164: NIC0..NIC7  each 28×16  stride=32  [NIC→its GPU via PCIe]
+//  Connections:
+//   NVLink (orange):  every GPU ↔ every NVSwitch
+//   PCIe (purple):    GPU→CPU (G0-3→CPU0, G4-7→CPU1),  NIC→GPU (1:1),  CPU→NVSwitch (mgmt, thin)
+//   UPI (blue-white): CPU0 ↔ CPU1
+//   IB (cyan):        NIC → ToR (drawn at switch layer, not here)
+function drawNodesChip(){
+  const NVS_CX=[30,95,160,225];
+  const NVS_CY=58, NVS_R=10;
+  const GPU_Y=[76,114];
+  const GPU_STRIDE=64;
+  const NIC_Y=148, NIC_W=26, NIC_H=16, NIC_STRIDE=32;
+
+  NODES.forEach(nd=>{
+    // ── Background ──
+    rr(nd.x,nd.y,nd.w,nd.h,5);
+    fillStroke('rgba(10,16,32,0.97)','rgba(34,197,94,0.35)',0.6/camS);
+
+    // ── Title ──
+    txt(nd.name,   nd.x+5,      nd.y+10,11,'rgba(134,239,172,0.85)','left',undefined,true);
+    txt('DGX H100',nd.x+nd.w-5, nd.y+10,10,'rgba(134,239,172,0.3)','right');
+
+    // ── CPU0, CPU1 ──
+    const cpuY=nd.y+18;
+    const cpu=[[nd.x+4,cpuY],[nd.x+60,cpuY]];
+    cpu.forEach(([cpx,cpy],c)=>{
+      rr(cpx,cpy,CW,CH,2);
+      fillStroke('rgba(59,130,246,0.78)','#60a5fa',0.8/camS);
+      txt(`CPU${c}`,cpx+CW/2,cpy+CH/2,11,'#fff');
+    });
+
+    // ── UPI: CPU0 ↔ CPU1 ──
+    if(lv.pcie){
+      line(cpu[0][0]+CW, cpuY+CH/2, cpu[1][0], cpuY+CH/2,
+           'rgba(147,197,253,0.55)', 1.2/camS);
+      pushEdge(cpu[0][0]+CW, cpuY+CH/2, cpu[1][0], cpuY+CH/2, 'upi', 4);
+      txt('UPI',nd.x+58,cpuY+CH/2,9,'rgba(147,197,253,0.5)');
+    }
+
+    // ── 4× NVSwitch ──
+    const nvSW=NVS_CX.map(dx=>({cx:nd.x+dx,cy:nd.y+NVS_CY}));
+    nvSW.forEach((sw,si)=>{
+      // halo
+      ctx.beginPath();ctx.arc(sw.cx,sw.cy,NVS_R+3,0,Math.PI*2);
+      fillStroke('rgba(139,92,246,0.1)','rgba(139,92,246,0.3)',0.4/camS);
+      // core
+      ctx.beginPath();ctx.arc(sw.cx,sw.cy,NVS_R,0,Math.PI*2);
+      fillStroke('rgba(139,92,246,0.88)','#a78bfa',0.9/camS);
+      txt(`SW${si}`,sw.cx,sw.cy,9,'#fff');
+
+      // PCIe mgmt: each NVSwitch → nearest CPU (SW0,SW1→CPU0  SW2,SW3→CPU1)
+      if(lv.pcie){
+        const ci=si<2?0:1;
+        const [cpx,cpy]=cpu[ci];
+        line(sw.cx, sw.cy-NVS_R, cpx+CW/2, cpy+CH,
+             'rgba(139,92,246,0.15)', 0.4/camS,[2/camS,3/camS]);
+        pushEdge(sw.cx, sw.cy-NVS_R, cpx+CW/2, cpy+CH, 'pcie', 4);
+      }
+    });
+    txt('NVSwitch ×4 — NVLink 4.0 All-to-All Fabric',nd.x+NW/2,nd.y+47,9,'rgba(167,139,250,0.45)');
+
+    // ── GPUs + NVLink + PCIe→CPU + HBM tag ──
+    for(let g=0;g<8;g++){
+      const col=g%4,row=Math.floor(g/4);
+      const gx=nd.x+4+col*GPU_STRIDE;
+      const gy=nd.y+GPU_Y[row];
+
+      // NVLink lines drawn BEFORE GPU box so box sits on top
+      if(lv.nvlink){
+        nvSW.forEach((sw,si)=>{
+          const op=0.22+si*0.07;
+          line(gx+GW/2, gy, sw.cx, sw.cy+NVS_R, `rgba(249,115,22,${op})`, 0.65/camS);
+          pushEdge(gx+GW/2, gy, sw.cx, sw.cy+NVS_R, 'nvlink', 4);
+        });
+      }
+
+      // PCIe G→CPU (G0-3→CPU0, G4-7→CPU1)
+      if(lv.pcie){
+        const ci=g<4?0:1;
+        const [cpx,cpy]=cpu[ci];
+        line(gx+GW/2, gy, cpx+CW*(ci===0?0.25:0.75), cpy+CH,
+             'rgba(139,92,246,0.25)', 0.5/camS,[2.5/camS,2/camS]);
+        pushEdge(gx+GW/2, gy, cpx+CW*(ci===0?0.25:0.75), cpy+CH, 'pcie', 4);
+      }
+
+      // GPU box
+      rr(gx,gy,GW,GH,3);
+      fillStroke('rgba(249,115,22,0.82)','#fb923c',0.9/camS);
+      txt(`G${g}`,gx+GW/2,gy+10,11,'#fff',undefined,undefined,true);
+
+      // HBM tag inside GPU box
+      rr(gx+2,gy+GH-9,GW-4,7,1);
+      fillStroke('rgba(14,116,144,0.7)','#06b6d4',0.4/camS);
+      txt('HBM 80G',gx+GW/2,gy+GH-5.5,7.5,'#67e8f9');
+    }
+
+    // ── 8× IB NIC (each paired 1:1 with a GPU via PCIe) ──
+    txt('IB NIC ×8 — ConnectX-7 (1 NIC per GPU, GPUDirect RDMA)',nd.x+NW/2,nd.y+NIC_Y-6,9,'rgba(134,239,172,0.35)');
+    for(let n=0;n<8;n++){
+      const col=n%4,row=Math.floor(n/4);
+      const nx=nd.x+4+col*NIC_STRIDE+(row===1?NIC_STRIDE/2:0);
+      // align NICs under their GPU columns (2 rows of 4)
+      const nx2=nd.x+4+col*GPU_STRIDE+(GPU_STRIDE-NIC_W)/2;
+      const ny=nd.y+NIC_Y+row*20;
+
+      rr(nx2,ny,NIC_W,NIC_H,2);
+      fillStroke('rgba(6,78,59,0.78)','#22c55e',0.7/camS);
+      txt(`N${n}`,nx2+NIC_W/2,ny+NIC_H/2,8,'#86efac');
+
+      // PCIe: NIC → GPU (straight line, each NIC sits under its GPU)
+      if(lv.pcie){
+        const gx=nd.x+4+col*GPU_STRIDE;
+        const gy=nd.y+GPU_Y[row];
+        line(nx2+NIC_W/2, ny, gx+GW/2, gy+GH,
+             'rgba(34,197,94,0.3)', 0.5/camS,[1.5/camS,2/camS]);
+        pushEdge(nx2+NIC_W/2, ny, gx+GW/2, gy+GH, 'ib', 4);
+      }
+    }
+  });
+}
+
+// ─── MASTER DRAW ─────────────────────────────────────────────────────────────
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  EDGES=[];   // rebuild edge hit list each frame
+  ctx.save();
+  ctx.translate(W/2,H/2);
+  ctx.scale(camS,camS);
+  ctx.translate(camX,camY);
+
+  const lod=getLOD(camS);
+
+  drawGrid();
+  drawZone();
+  drawZoneLabel();
+
+  // LOD-exclusive rendering — exactly one of these paths runs, no overlap
+  if(lod<=1){
+    // Just zone + pods visible
+    if(lod===1) drawPods();
+    drawSwitches();
+  } else if(lod===2){
+    drawPods();
+    drawRacks();
+    drawSwitches();
+  } else if(lod===3){
+    drawPods();
+    drawRacks();
+    drawSwitches();
+    drawNodesMini();   // mini chips only
+  } else {
+    // lod===4: chip detail — no mini, no double draw
+    drawRacks();
+    drawSwitches();
+    drawNodesChip();   // full chips, node bg included
+  }
+
+  ctx.restore();
+}
+
+// ─── HIT TESTING ─────────────────────────────────────────────────────────────
+function hitTest(wx,wy){
+  const lod=getLOD(camS);
+
+  // LOD 4: test chips inside nodes
+  if(lod>=4){
+    for(const nd of NODES){
+      const nvsCx=[nd.x+30,nd.x+95,nd.x+160,nd.x+225],nvsCy=nd.y+58;
+      if(nvsCx.some(cx=>Math.hypot(wx-cx,wy-nvsCy)<14))return'nvswitch';
+      for(let g=0;g<8;g++){
+        const col=g%4,row=Math.floor(g/4);
+        const gx=nd.x+4+col*64,gy=nd.y+[76,114][row];
+        if(wx>=gx&&wx<=gx+GW&&wy>=gy&&wy<=gy+GH)return'gpu';
+      }
+      if([0,1].some(c=>{const cpx=nd.x+4+c*56,cpy=nd.y+18;return wx>=cpx&&wx<=cpx+CW&&wy>=cpy&&wy<=cpy+CH;}))return'cpu';
+      // NIC hit (8 individual NICs under GPUs)
+      for(let n=0;n<8;n++){const col=n%4,row=Math.floor(n/4),nx2=nd.x+4+col*64+(64-26)/2,ny=nd.y+148+row*20;if(wx>=nx2&&wx<=nx2+26&&wy>=ny&&wy<=ny+16)return'nic';}
+      // HBM tag inside GPU box
+      for(let g=0;g<8;g++){const col=g%4,row=Math.floor(g/4),gx=nd.x+4+col*64,gy=nd.y+[76,114][row];if(wx>=gx+2&&wx<=gx+GW-2&&wy>=gy+GH-9&&wy<=gy+GH)return'hbm';}
+      if(wx>=nd.x&&wx<=nd.x+nd.w&&wy>=nd.y&&wy<=nd.y+nd.h)return'node';
+    }
+  }
+
+  // LOD 3: nodes
+  if(lod>=3){
+    for(const nd of NODES)if(wx>=nd.x&&wx<=nd.x+nd.w&&wy>=nd.y&&wy<=nd.y+nd.h)return'node';
+  }
+
+  // Switches
+  for(const sw of SWITCHES){
+    if(sw.type==='tor'&&Math.hypot(wx-sw.cx,wy-sw.cy)<18/camS)return'tor';
+    if((sw.type==='spine'||sw.type==='core')&&sw.w){
+      if(wx>=sw.cx-sw.w/2&&wx<=sw.cx+sw.w/2&&wy>=sw.cy-sw.h/2&&wy<=sw.cy+sw.h/2)return sw.type;
+    }
+  }
+
+  if(lod>=2){for(const r of RACKS)if(wx>=r.x&&wx<=r.x+r.w&&wy>=r.y&&wy<=r.y+r.h)return'rack';}
+  for(const p of PODS)if(wx>=p.x&&wx<=p.x+p.w&&wy>=p.y&&wy<=p.y+p.h)return'pod';
+  const z=ZONE;if(wx>=z.x&&wx<=z.x+z.w&&wy>=z.y&&wy<=z.y+z.h)return'zone';
+  return null;
+}
+
+// ─── INPUT ───────────────────────────────────────────────────────────────────
+let dragging=false,dragStart={x:0,y:0},camStart={x:0,y:0};
+
+canvas.addEventListener('mousedown',e=>{
+  dragging=true;
+  dragStart={x:e.clientX,y:e.clientY};
+  camStart={x:camX,y:camY};
+  canvas.classList.add('dragging');
+  hideEdgeTip();
+});
+canvas.addEventListener('mousemove',e=>{
+  if(dragging){
+    camX=camStart.x+(e.clientX-dragStart.x)/camS;
+    camY=camStart.y+(e.clientY-dragStart.y)/camS;
+    tgtX=camX;tgtY=camY;
+    draw();updateHUD();
+    return;
+  }
+  const w=s2w(e.clientX,e.clientY);
+  // Check edges FIRST — they live inside node bounding boxes so node check would shadow them
+  const edgeType = hitEdge(e.clientX,e.clientY);
+  // Only test node components if not hovering an edge
+  const nodeHit = !edgeType ? hitTest(w.x,w.y) : null;
+
+  if(edgeType){
+    canvas.className='pointer';
+    showEdgeTip(edgeType, e.clientX, e.clientY);
+  } else {
+    hideEdgeTip();
+    canvas.className=nodeHit?'pointer':'';
+  }
+});
+canvas.addEventListener('mouseup',e=>{
+  if(!dragging)return;
+  const moved=Math.hypot(e.clientX-dragStart.x,e.clientY-dragStart.y);
+  dragging=false;canvas.classList.remove('dragging');
+  if(moved<4){
+    const w=s2w(e.clientX,e.clientY);
+    const hit=hitTest(w.x,w.y);
+    if(hit)showInfo(hit);
+    else document.getElementById('info').style.display='none';
+  }
+});
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const f=e.deltaY<0?1.04:1/1.04;
+  const ns=Math.max(.04,Math.min(20,camS*f));
+  const wx=(e.clientX-W/2)/camS-camX,wy=(e.clientY-H/2)/camS-camY;
+  camX=camX-wx*(ns-camS)/ns;camY=camY-wy*(ns-camS)/ns;
+  camS=ns;tgtX=camX;tgtY=camY;tgtS=ns;
+  draw();updateHUD();
+},{passive:false});
+
+// Touch
+let td=0;
+canvas.addEventListener('touchstart',e=>{
+  if(e.touches.length===1){dragging=true;dragStart={x:e.touches[0].clientX,y:e.touches[0].clientY};camStart={x:camX,y:camY};}
+  else if(e.touches.length===2)td=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+  e.preventDefault();
+},{passive:false});
+canvas.addEventListener('touchmove',e=>{
+  if(e.touches.length===1&&dragging){
+    camX=camStart.x+(e.touches[0].clientX-dragStart.x)/camS;
+    camY=camStart.y+(e.touches[0].clientY-dragStart.y)/camS;
+    tgtX=camX;tgtY=camY;draw();updateHUD();
+  } else if(e.touches.length===2){
+    const nd2=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    if(td>0){const ns=Math.max(.04,Math.min(20,camS*nd2/td));camS=ns;tgtS=ns;draw();updateHUD();}
+    td=nd2;
+  }
+  e.preventDefault();
+},{passive:false});
+canvas.addEventListener('touchend',()=>{dragging=false;});
+
+// Layer nav
+function goLayer(l){
+  document.querySelectorAll('.lbtn').forEach(b=>b.classList.remove('on'));
+  document.getElementById('lb-'+l).classList.add('on');
+  if(l==='zone')fitBox(ZONE.x,ZONE.y,ZONE.w,ZONE.h,40);
+  else if(l==='pod'){const xs=PODS.map(p=>p.x),ys=PODS.map(p=>p.y);fitBox(Math.min(...xs),Math.min(...ys),Math.max(...PODS.map(p=>p.x+p.w))-Math.min(...xs),Math.max(...PODS.map(p=>p.y+p.h))-Math.min(...ys),25)}
+  else if(l==='rack'){const xs=RACKS.map(r=>r.x),ys=RACKS.map(r=>r.y);fitBox(Math.min(...xs),Math.min(...ys),Math.max(...RACKS.map(r=>r.x+r.w))-Math.min(...xs),Math.max(...RACKS.map(r=>r.y+r.h))-Math.min(...ys),16)}
+  else if(l==='node'){const xs=NODES.map(n=>n.x),ys=NODES.map(n=>n.y);fitBox(Math.min(...xs),Math.min(...ys),Math.max(...NODES.map(n=>n.x+n.w))-Math.min(...xs),Math.max(...NODES.map(n=>n.y+n.h))-Math.min(...ys),12)}
+  else if(l==='chip'){
+    const ns=NODES.filter(n=>n.rackId===RACKS[0].id);
+    const xs=ns.map(n=>n.x),ys=ns.map(n=>n.y);
+    fitBox(Math.min(...xs)-10,Math.min(...ys)-10,Math.max(...ns.map(n=>n.x+n.w))-Math.min(...xs)+20,Math.max(...ns.map(n=>n.y+n.h))-Math.min(...ys)+20,30);
+  }
+}
+
+// ─── INIT ────────────────────────────────────────────────────────────────────
+resize();
+setTimeout(()=>goLayer('zone'),60);
+</script>
+</body>
+</html>
