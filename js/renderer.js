@@ -40,12 +40,23 @@ export const zoom = d3.zoom()
     currentTy = e.transform.y;
     updateLOD(currentK);
     updateHUD();
+    updateTextScale(currentK);
   });
 
 svg.call(zoom);
 
 // Prevent default browser scroll on the SVG (must use addEventListener for passive:false)
 document.getElementById('sv').addEventListener('wheel', e => e.preventDefault(), { passive: false });
+
+// ─── Counter-scale text so labels stay readable at all zoom levels ───────────
+// Each text element stores its "base" font size in data-fs attribute.
+// On zoom, we set font-size = base / k, so text appears at constant screen size.
+export function updateTextScale(k) {
+  root.selectAll('text[data-fs]').each(function() {
+    const base = +d3.select(this).attr('data-fs');
+    d3.select(this).attr('font-size', base / k);
+  });
+}
 
 // ─── LOD ─────────────────────────────────────────────────────────────────────
 export function getLOD(k) {
@@ -167,6 +178,23 @@ export function hideEdgeTip() {
 }
 
 // ─── SVG element builders ─────────────────────────────────────────────────────
+// Helper: append text with counter-scale support
+// Pass data-fs to opt into counter-scaling
+function svgText(parent, x, y, txt, opts={}) {
+  const t = parent.append('text')
+    .attr('x', x).attr('y', y)
+    .attr('font-family', '"SF Mono",Consolas,monospace')
+    .attr('fill', opts.fill || '#e2e8f0')
+    .attr('font-size', opts.fs || 11)
+    .attr('text-anchor', opts.anchor || 'middle')
+    .attr('dominant-baseline', opts.base || 'middle')
+    .attr('pointer-events', 'none')
+    .text(txt);
+  if (opts.bold) t.attr('font-weight', 600);
+  if (opts.scale !== false) t.attr('data-fs', opts.fs || 11); // counter-scale by default
+  return t;
+}
+
 // All elements are created ONCE; LOD show/hide is done by updateLOD()
 
 function buildGrid() {
@@ -398,6 +426,7 @@ function buildNodesMini() {
       .attr('fill', 'rgba(134,239,172,0.8)').attr('font-size', 11).attr('font-weight', 600)
       .attr('font-family', '"SF Mono",Consolas,monospace')
       .attr('dominant-baseline', 'hanging')
+      .attr('data-fs', 11)
       .attr('pointer-events', 'none')
       .text(nd.name);
 
@@ -406,6 +435,7 @@ function buildNodesMini() {
       .attr('fill', 'rgba(251,146,60,0.65)').attr('font-size', 10)
       .attr('font-family', '"SF Mono",Consolas,monospace')
       .attr('text-anchor', 'end').attr('dominant-baseline', 'hanging')
+      .attr('data-fs', 10)
       .attr('pointer-events', 'none')
       .text('8× H100');
 
@@ -478,21 +508,11 @@ function buildNodesChip() {
       .attr('fill', 'rgba(10,16,32,0.97)').attr('stroke', 'rgba(34,197,94,0.35)')
       .attr('stroke-width', 0.6);
 
-    ng.append('text')
-      .attr('x', nd.x + 5).attr('y', nd.y + 10)
-      .attr('fill', 'rgba(134,239,172,0.85)').attr('font-size', 11).attr('font-weight', 600)
-      .attr('font-family', '"SF Mono",Consolas,monospace')
-      .attr('dominant-baseline', 'hanging')
-      .attr('pointer-events', 'none')
-      .text(nd.name);
-
-    ng.append('text')
-      .attr('x', nd.x + nd.w - 5).attr('y', nd.y + 10)
-      .attr('fill', 'rgba(134,239,172,0.3)').attr('font-size', 10)
-      .attr('font-family', '"SF Mono",Consolas,monospace')
-      .attr('text-anchor', 'end').attr('dominant-baseline', 'hanging')
-      .attr('pointer-events', 'none')
-      .text('DGX H100');
+    // Node label (counter-scaled)
+    svgText(ng, nd.x + 5, nd.y + 16, nd.name,
+      {fs:11, fill:'rgba(134,239,172,0.85)', anchor:'start', base:'middle', bold:true});
+    svgText(ng, nd.x + NW - 5, nd.y + 16, 'DGX H100',
+      {fs:9, fill:'rgba(134,239,172,0.3)', anchor:'end', base:'middle'});
 
     // CPUs
     const cpuPositions = [[nd.x + 4, nd.y + 18], [nd.x + 60, nd.y + 18]];
@@ -505,13 +525,8 @@ function buildNodesChip() {
       cg.append('rect')
         .attr('x', cpx).attr('y', cpy).attr('width', CW).attr('height', CH).attr('rx', 2)
         .attr('fill', 'rgba(59,130,246,0.78)').attr('stroke', '#60a5fa').attr('stroke-width', 0.8);
-      cg.append('text')
-        .attr('x', cpx + CW/2).attr('y', cpy + CH/2)
-        .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
-        .attr('fill', '#fff').attr('font-size', 11)
-        .attr('font-family', '"SF Mono",Consolas,monospace')
-        .attr('pointer-events', 'none')
-        .text(`CPU${c}`);
+      svgText(cg, cpx + CW/2, cpy + CH/2, `CPU${c}`,
+        {fs:10, fill:'#fff'});
     });
 
     // CPU–CPU UPI (PCIe group)
@@ -526,10 +541,11 @@ function buildNodesChip() {
     lPcie.append('text')
       .attr('x', nd.x + 58).attr('y', cpuPositions[0][1] + CH/2)
       .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
-      .attr('fill', 'rgba(147,197,253,0.5)').attr('font-size', 10)
+      .attr('fill', 'rgba(147,197,253,0.5)').attr('font-size', 9)
       .attr('font-family', '"SF Mono",Consolas,monospace')
       .attr('pointer-events', 'none')
-      .text('UPI Link');
+      .attr('data-fs', 9)
+      .text('UPI');
 
     // NVSwitches
     const nvSW = NVS_CX.map(dx => ({ cx: nd.x + dx, cy: nd.y + NVS_CY }));
@@ -549,13 +565,8 @@ function buildNodesChip() {
       swg.append('circle')
         .attr('cx', sw.cx).attr('cy', sw.cy).attr('r', NVS_R)
         .attr('fill', 'rgba(139,92,246,0.88)').attr('stroke', '#a78bfa').attr('stroke-width', 0.9);
-      swg.append('text')
-        .attr('x', sw.cx).attr('y', sw.cy)
-        .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
-        .attr('fill', '#fff').attr('font-size', 9)
-        .attr('font-family', '"SF Mono",Consolas,monospace')
-        .attr('pointer-events', 'none')
-        .text(`NVSwitch ${si}`);
+      svgText(swg, sw.cx, sw.cy, `NVS${si}`,
+        {fs:8, fill:'#fff'});
 
       // NVSwitch → CPU (pcie)
       const ci = si < 2 ? 0 : 1;
@@ -570,13 +581,9 @@ function buildNodesChip() {
         .attr('data-etype', 'pcie');
     });
 
-    lChips.append('text')
-      .attr('x', nd.x + NW/2).attr('y', nd.y + 47)
-      .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
-      .attr('fill', 'rgba(167,139,250,0.45)').attr('font-size', 10)
-      .attr('font-family', '"SF Mono",Consolas,monospace')
-      .attr('pointer-events', 'none')
-      .text('NVSwitch ×4  —  NVLink 4.0 All-to-All Fabric');
+    // NVSwitch fabric label — small, centered, counter-scaled
+    svgText(lChips, nd.x + NW/2, nd.y + 50, 'NVLink 4.0 All-to-All Fabric',
+      {fs:8, fill:'rgba(167,139,250,0.4)'});
 
     // ── NVLink Fabric Bus Bars ──────────────────────────────────────────────
     // Two horizontal bus bars (one per GPU row), NVSwitches tap off vertically.
@@ -596,22 +603,12 @@ function buildNodesChip() {
         .attr('data-etype', 'nvlink');
     });
 
-    // NVSwitch vertical taps to nearest bus bar
+    // NVSwitch vertical taps — only tap to UPPER bus bar (no lower tap to avoid crossing GPUs)
     nvSW.forEach((sw, si) => {
-      // tap to upper bar (row 0) and lower bar (row 1)
-      // upper: from NVSwitch top to BUS_Y[0]
-      lNvlink.append('line')
-        .attr('class', 'edge-nvlink nvlink-tap')
-        .attr('x1', sw.cx).attr('y1', sw.cy - NVS_R)
-        .attr('x2', sw.cx).attr('y2', BUS_Y[0])
-        .attr('stroke', 'rgba(249,115,22,0.4)').attr('stroke-width', 1.2)
-        .style('cursor', 'pointer')
-        .attr('data-etype', 'nvlink');
-      // lower: from NVSwitch bottom to BUS_Y[1]
       lNvlink.append('line')
         .attr('class', 'edge-nvlink nvlink-tap')
         .attr('x1', sw.cx).attr('y1', sw.cy + NVS_R)
-        .attr('x2', sw.cx).attr('y2', BUS_Y[1])
+        .attr('x2', sw.cx).attr('y2', BUS_Y[0])
         .attr('stroke', 'rgba(249,115,22,0.4)').attr('stroke-width', 1.2)
         .style('cursor', 'pointer')
         .attr('data-etype', 'nvlink');
@@ -655,15 +652,17 @@ function buildNodesChip() {
         .style('cursor', 'pointer')
         .attr('data-etype', 'nvlink');
 
-      // PCIe stub: GPU → PCIe bus bar
-      lPcie.append('line')
-        .attr('class', 'edge-pcie pcie-stub')
-        .attr('x1', gx + GW/2).attr('y1', gy)
-        .attr('x2', gx + GW/2).attr('y2', PCIE_BUS_Y)
-        .attr('stroke', 'rgba(139,92,246,0.2)').attr('stroke-width', 0.5)
-        .attr('stroke-dasharray', '2 2')
-        .style('cursor', 'pointer')
-        .attr('data-etype', 'pcie');
+      // PCIe stub: only show for row 0 GPUs (row 1 stubs would cross row 0 GPUs)
+      if (row === 0) {
+        lPcie.append('line')
+          .attr('class', 'edge-pcie pcie-stub')
+          .attr('x1', gx + GW/2).attr('y1', gy)
+          .attr('x2', gx + GW/2).attr('y2', PCIE_BUS_Y)
+          .attr('stroke', 'rgba(139,92,246,0.2)').attr('stroke-width', 0.5)
+          .attr('stroke-dasharray', '2 2')
+          .style('cursor', 'pointer')
+          .attr('data-etype', 'pcie');
+      }
       const gg = lChips.append('g')
         .attr('class', 'hit-gpu')
         .attr('data-type', 'gpu')
@@ -673,13 +672,8 @@ function buildNodesChip() {
       gg.append('rect')
         .attr('x', gx).attr('y', gy).attr('width', GW).attr('height', GH).attr('rx', 3)
         .attr('fill', 'rgba(249,115,22,0.82)').attr('stroke', '#fb923c').attr('stroke-width', 0.9);
-      gg.append('text')
-        .attr('x', gx + GW/2).attr('y', gy + 10)
-        .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
-        .attr('fill', '#fff').attr('font-size', 11).attr('font-weight', 600)
-        .attr('font-family', '"SF Mono",Consolas,monospace')
-        .attr('pointer-events', 'none')
-        .text(`GPU ${gi}`);
+      svgText(gg, gx + GW/2, gy + 10, `GPU ${gi}`,
+        {fs:10, fill:'#fff', bold:true});
 
       // HBM
       const hg = lChips.append('g')
@@ -690,23 +684,13 @@ function buildNodesChip() {
       hg.append('rect')
         .attr('x', gx + 2).attr('y', gy + GH - 9).attr('width', GW - 4).attr('height', 7).attr('rx', 1)
         .attr('fill', 'rgba(14,116,144,0.7)').attr('stroke', '#06b6d4').attr('stroke-width', 0.4);
-      hg.append('text')
-        .attr('x', gx + GW/2).attr('y', gy + GH - 5.5)
-        .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
-        .attr('fill', '#67e8f9').attr('font-size', 8)
-        .attr('font-family', '"SF Mono",Consolas,monospace')
-        .attr('pointer-events', 'none')
-        .text('HBM3 80GB');
+      svgText(hg, gx + GW/2, gy + GH - 5, 'HBM3 80G',
+        {fs:7, fill:'#67e8f9'});
     }
 
-    // NIC label
-    lChips.append('text')
-      .attr('x', nd.x + NW/2).attr('y', nd.y + NIC_Y - 6)
-      .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
-      .attr('fill', 'rgba(134,239,172,0.35)').attr('font-size', 11)
-      .attr('font-family', '"SF Mono",Consolas,monospace')
-      .attr('pointer-events', 'none')
-      .text('IB NIC ×8 — ConnectX-7 (1 NIC per GPU, GPUDirect RDMA)');
+    // NIC section label
+    svgText(lChips, nd.x + NW/2, nd.y + NIC_Y - 7, 'IB NIC ×8 — ConnectX-7  GPUDirect RDMA',
+      {fs:8, fill:'rgba(134,239,172,0.3)'});
 
     // NICs
     for (let n = 0; n < 8; n++) {
@@ -722,23 +706,19 @@ function buildNodesChip() {
       nicg.append('rect')
         .attr('x', nx2).attr('y', ny).attr('width', NIC_W).attr('height', NIC_H).attr('rx', 2)
         .attr('fill', 'rgba(6,78,59,0.78)').attr('stroke', '#22c55e').attr('stroke-width', 0.7);
-      nicg.append('text')
-        .attr('x', nx2 + NIC_W/2).attr('y', ny + NIC_H/2)
-        .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
-        .attr('fill', '#86efac').attr('font-size', 9)
-        .attr('font-family', '"SF Mono",Consolas,monospace')
-        .attr('pointer-events', 'none')
-        .text(`NIC ${n}`);
+      svgText(nicg, nx2 + NIC_W/2, ny + NIC_H/2, `NIC ${n}`,
+        {fs:8, fill:'#86efac'});
 
-      // NIC → matching GPU (1 NIC per GPU, GPUDirect RDMA)
-      // NIC n maps to GPU n — same col/row, draw a vertical line between them
-      const gpuForNic_x = nd.x + 4 + col * GPU_STRIDE + GW/2;
-      const gpuForNic_y = nd.y + GPU_Y[row] + GH;
+      // NIC → matching GPU: short direct line, same column, no crossing
+      // NIC row 0 (n<4) → GPU row 0, NIC row 1 (n>=4) → GPU row 1
+      // Line goes straight up from NIC top to GPU bottom — no crossing since same column
+      const nicGpuX = nd.x + 4 + col * GPU_STRIDE + GW/2;
+      const nicGpuBotY = nd.y + GPU_Y[row] + GH;
       lPcie.append('line')
         .attr('class', 'edge-nic-gpu')
-        .attr('x1', gpuForNic_x).attr('y1', gpuForNic_y)
-        .attr('x2', gpuForNic_x).attr('y2', ny)
-        .attr('stroke', 'rgba(34,197,94,0.45)').attr('stroke-width', 0.8)
+        .attr('x1', nicGpuX).attr('y1', ny)
+        .attr('x2', nicGpuX).attr('y2', nicGpuBotY)
+        .attr('stroke', 'rgba(34,197,94,0.5)').attr('stroke-width', 0.8)
         .attr('stroke-dasharray', '2 2')
         .style('cursor', 'pointer')
         .attr('data-etype', 'ib');
@@ -757,6 +737,7 @@ export function buildScene() {
   buildNodesChip();
   attachEvents();
   updateLOD(currentK);
+  updateTextScale(currentK);
 }
 
 // ─── Event delegation ─────────────────────────────────────────────────────────

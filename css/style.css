@@ -7,7 +7,7 @@ body{background:#070c18;color:#e2e8f0;font-family:'SF Mono',Consolas,monospace;o
 #title h1{font-size:15px;font-weight:600;letter-spacing:.1em;color:#60a5fa;text-transform:uppercase}
 #title p{font-size:11px;color:#475569;margin-top:2px}
 .panel{background:rgba(7,12,24,0.93);border:1px solid rgba(255,255,255,0.13);border-radius:8px;padding:10px 12px;backdrop-filter:blur(10px);pointer-events:all}
-#ctrl{position:absolute;top:16px;right:16px;display:flex;flex-direction:column;gap:8px;width:195px;max-height:calc(100vh - 32px);overflow-y:auto}
+#ctrl{position:absolute;top:16px;right:16px;display:flex;flex-direction:column;gap:8px;width:190px;max-height:calc(100vh - 32px);overflow-y:auto;overflow-x:hidden}
 .cl{font-size:10px;color:#475569;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px}
 .zrow{display:flex;gap:4px}
 .zbtn{background:#111827;border:1px solid rgba(255,255,255,0.15);color:#e2e8f0;width:28px;height:28px;border-radius:4px;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;transition:background .12s}
