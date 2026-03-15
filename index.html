@@ -183,6 +183,417 @@ canvas.pointer{cursor:pointer}
   <div id="lodlabel">Zone 视图</div>
 </div>
 <script>
+
+// ═══ LAYER 1: DATA MODEL (entities, links, cluster config) ═══
+// ═══════════════════════════════════════════════════════════════════════════
+// LAYER 1: DATA MODEL
+// Define all entities and link types here. Rendering code reads from these.
+// To adapt to a different GPU cluster, only edit CLUSTER_CONFIG below.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ENTITY_TYPES = {
+  gpu:      { label:'GPU',       color:'rgba(249,115,22,0.82)', stroke:'#fb923c', shape:'rect' },
+  cpu:      { label:'CPU',       color:'rgba(59,130,246,0.78)', stroke:'#60a5fa', shape:'rect' },
+  nvswitch: { label:'NVSwitch',  color:'rgba(139,92,246,0.88)', stroke:'#a78bfa', shape:'circle' },
+  hbm:      { label:'HBM3',      color:'rgba(14,116,144,0.7)',  stroke:'#06b6d4', shape:'rect' },
+  nic:      { label:'IB NIC',    color:'rgba(6,78,59,0.78)',    stroke:'#22c55e', shape:'rect' },
+  tor:      { label:'ToR',       color:'rgba(6,182,212,0.16)',  stroke:'rgba(6,182,212,0.65)', shape:'circle' },
+  spine:    { label:'Spine',     color:'rgba(34,197,94,0.14)',  stroke:'rgba(34,197,94,0.45)', shape:'rect' },
+  core:     { label:'Core',      color:'rgba(34,197,94,0.22)',  stroke:'rgba(34,197,94,0.7)',  shape:'rect' },
+  rack:     { label:'Rack',      color:'rgba(6,182,212,0.05)',  stroke:'rgba(6,182,212,0.22)', shape:'rect' },
+  pod:      { label:'Pod',       color:null, stroke:null, shape:'rect' },
+  zone:     { label:'Zone',      color:'rgba(59,130,246,0.022)',stroke:'rgba(59,130,246,0.2)', shape:'rect' },
+  node:     { label:'Node',      color:'rgba(10,16,32,0.97)',   stroke:'rgba(34,197,94,0.35)', shape:'rect' },
+};
+
+const LINK_TYPES = {
+  nvlink:      { label:'NVLink 4.0',            color:'rgba(249,115,22,0.85)',  dashDraw:false,
+                 bw:'900 GB/s 双向 (单 GPU)', total_bw:'900 GB/s × 18 lane',
+                 latency:'< 1 μs', encoding:'PAM4 NRZ',
+                 use:'节点内 GPU All-to-All 训练数据面；AllReduce/AllGather 不经 CPU' },
+  pcie:        { label:'PCIe Gen5 x16',          color:'rgba(139,92,246,0.85)', dashDraw:false,
+                 bw:'128 GB/s 双向', latency:'1–4 μs', encoding:'128b/130b',
+                 use:'GPU→CPU 控制调度；NIC→GPU GPUDirect DMA；NVSwitch mgmt' },
+  upi:         { label:'AMD Infinity Fabric',    color:'rgba(147,197,253,0.85)',dashDraw:false,
+                 bw:'~340 GB/s (EPYC)', latency:'~100 ns',
+                 use:'双路 CPU 共享内存；NUMA 跨 socket 访问' },
+  ib:          { label:'InfiniBand NDR 400Gb/s', color:'rgba(6,182,212,0.85)',  dashDraw:false,
+                 bw:'400 Gb/s = 50 GB/s 单 link', node_total:'3.2 Tb/s (8 NIC × 400G)',
+                 latency:'< 600 ns MPI level', rdma:'GPUDirect RDMA — 零拷贝', encoding:'64b/66b',
+                 use:'跨节点 RDMA 训练通信；8 NIC 绑定每节点 3.2 Tb/s，不经 CPU' },
+  ib_node_tor: { label:'IB NDR 400Gb/s (Node→ToR)', color:'rgba(6,182,212,0.85)', dashDraw:false,
+                 bw:'400 Gb/s per NIC', node_total:'8× = 3.2 Tb/s per node',
+                 latency:'< 600 ns',
+                 use:'Node→ToR RDMA；每 GPU 独享一条 400G link (GPUDirect)' },
+  ib_tor_spine:{ label:'IB NDR 400Gb/s (ToR→Spine)', color:'rgba(6,182,212,0.85)', dashDraw:false,
+                 bw:'4× 400G ECMP 上联', topo:'Fat-Tree leaf-spine，1:1 无阻塞',
+                 latency:'100–300 ns switch',
+                 use:'Pod 内 non-blocking 汇聚；AllReduce 不出现热点拥塞' },
+  eth:         { label:'Ethernet 400GbE',        color:'rgba(34,197,94,0.85)',  dashDraw:true,
+                 bw:'400 Gb/s', latency:'~5–10 μs TCP',
+                 use:'跨 Pod 路由；连接 Lustre/FSx/S3 存储；管控面 + 外网出口' },
+};
+
+// Pod visual themes
+const POD_THEMES = {
+  purple: { fill:'rgba(28,24,70,0.55)',  stroke:'rgba(139,92,246,0.25)' },
+  green:  { fill:'rgba(18,38,25,0.55)',  stroke:'rgba(34,197,94,0.22)'  },
+  blue:   { fill:'rgba(15,30,55,0.55)',  stroke:'rgba(59,130,246,0.25)' },
+  orange: { fill:'rgba(40,20,10,0.55)',  stroke:'rgba(249,115,22,0.25)' },
+};
+
+// ─── Cluster configuration ───────────────────────────────────────────────────
+// Edit this object to change cluster size and hardware specs.
+// All rendering and info panels derive from this automatically.
+const CLUSTER_CONFIG = {
+  zone: {
+    name:       'Availability Zone',
+    totalGPU:   '35,000+',
+    network:    '三层 Spine-Leaf + Core',
+    storage:    'FSx Lustre / EFS / S3',
+    redundancy: '独立供电 + 双路制冷',
+  },
+  pods: [
+    { id:'pod0', name:'Pod A — Training',  racksCount:5, theme:'purple' },
+    { id:'pod1', name:'Pod B — Training',  racksCount:5, theme:'purple' },
+    { id:'pod2', name:'Pod C — Inference', racksCount:3, theme:'green'  },
+  ],
+  rack: {
+    nodesPerRack: 2,
+    heightU:      42,
+    cooling:      '液冷 Direct Water Cooling',
+    powerKW:      '30~60 kW',
+  },
+  node: {
+    model:         'DGX H100',
+    gpuCount:      8,
+    cpuCount:      2,
+    nvswitchCount: 4,
+    nicCount:      8,
+    ramTB:         2,
+    peakFlops:     '~15.8 PFLOPS FP8',
+  },
+  gpu: {
+    model:        'H100 SXM5',
+    vramGB:       80,
+    vramType:     'HBM3',
+    vramBWTBs:    3.35,
+    fp16TFLOPS:   '~1979',
+    nvlinkBWGBs:  900,
+    pcieLanes:    'Gen5 x16',
+    tdpW:         700,
+  },
+  cpu: {
+    model:      'AMD EPYC 9654',
+    cores:      96,
+    threads:    192,
+    ramTB:      2,
+    pcieGen:    5,
+    role:       '调度·预处理·通信初始化',
+  },
+  nvswitch: {
+    protocol:     'NVLink 4.0',
+    bwGBs:        900,
+    latency:      '< 1 μs',
+    topology:     '全连接 All-to-All',
+    countPerNode: 4,
+  },
+  nic: {
+    model:        'Mellanox ConnectX-7',
+    protocol:     'InfiniBand NDR / RoCEv2',
+    bwGbps:       400,
+    latencyNs:    600,
+    countPerNode: 8,
+    totalTbps:    3.2,
+  },
+  tor: {
+    protocol:     'InfiniBand NDR 400Gb/s',
+    ports:        64,
+    uplinkCount:  4,
+    latency:      '100~300 ns',
+  },
+  spine: {
+    protocol:  'InfiniBand NDR/HDR',
+    topology:  'Fat-Tree',
+    ratio:     '1:1 全带宽无阻塞',
+    model:     'NVIDIA Quantum-2 QM9700',
+  },
+  core: {
+    protocol:  'Ethernet 400GbE',
+    role:      '跨Pod路由 + 存储 + 外网',
+    latency:   '~5–10 μs TCP',
+  },
+};
+
+
+// ═══ LAYER 2: TOPOLOGY BUILDER (positions, layout) ═══
+// ═══════════════════════════════════════════════════════════════════════════
+// LAYER 2: TOPOLOGY BUILDER
+// Pure function: CLUSTER_CONFIG → positioned entity arrays
+// No drawing code here. Layout constants live here, not in renderers.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const LAYOUT = {
+  nodeW:        260,   nodeH:     170,   // node bounding box
+  gpuW:          54,   gpuH:       26,   // GPU chip
+  cpuW:          52,   cpuH:       22,   // CPU chip
+  nvsR:          10,                     // NVSwitch circle radius
+  nicW:          26,   nicH:       16,   // NIC chip
+  // NVSwitch X offsets inside node (for 4 switches)
+  nvsCxOffsets: [30, 95, 160, 225],
+  nvsCyOffset:   58,
+  gpuRows:      [76, 114],               // GPU row Y offsets inside node
+  gpuStride:     64,                     // GPU column stride
+  nicRowY:      148,   nicRowStride: 20, // NIC row Y offsets
+  cpuOffsets:   [4, 60],                // CPU X offsets inside node
+  cpuY:          18,
+
+  rackPadX:      8,    rackPadTop:  30,  // rack internal padding
+  nodeGap:       14,                     // vertical gap between nodes in rack
+  podPadX:       20,   podPadTop:   34,  podPadBottom: 64,
+  podGap:        16,                     // gap between racks inside a pod
+  interPodGap:   44,                     // gap between pods
+};
+
+// Build topology from config.
+// Returns flat arrays ready for rendering; all positions in world coordinates.
+function buildTopology(config, layout) {
+  const pods=[], racks=[], nodes=[], switches=[];
+  const cfg = config;
+  const L = layout;
+  const NW = L.nodeW, NH = L.nodeH;
+  const rackW = NW + L.rackPadX * 2;
+  const rackH = L.rackPadTop
+              + NH * cfg.rack.nodesPerRack
+              + L.nodeGap * (cfg.rack.nodesPerRack - 1)
+              + 10;
+  const podH  = L.podPadTop + rackH + L.podPadBottom;
+  const podW  = n => L.podPadX*2 + n*rackW + (n-1)*L.podGap;
+
+  let curX = 0;
+  cfg.pods.forEach((podCfg, pi) => {
+    const pw = podW(podCfg.racksCount);
+    const theme = POD_THEMES[podCfg.theme] || POD_THEMES.purple;
+    const pod = {
+      id: podCfg.id, type:'pod', name: podCfg.name,
+      x: curX, y: 0, w: pw, h: podH,
+      fill: theme.fill, stroke: theme.stroke,
+      rackIds: [],
+    };
+    pods.push(pod);
+
+    for (let ri = 0; ri < podCfg.racksCount; ri++) {
+      const rx = curX + L.podPadX + ri * (rackW + L.podGap);
+      const ry = L.podPadTop;
+      const rackId = `${podCfg.id}_r${ri}`;
+      const rack = {
+        id: rackId, type:'rack', podId: podCfg.id,
+        name: `Rack ${String.fromCharCode(65+pi)}-0${ri+1}`,
+        x: rx, y: ry, w: rackW, h: rackH, nodeIds: [],
+      };
+      racks.push(rack);
+      pod.rackIds.push(rackId);
+
+      for (let ni = 0; ni < cfg.rack.nodesPerRack; ni++) {
+        const nodeId = `${rackId}_n${ni}`;
+        const ny = ry + L.rackPadTop + ni*(NH + L.nodeGap);
+        nodes.push({
+          id: nodeId, type:'node', rackId, podId: podCfg.id,
+          name: `Node ${ri+1}-0${ni+1}`,
+          x: rx + L.rackPadX, y: ny, w: NW, h: NH,
+        });
+        rack.nodeIds.push(nodeId);
+      }
+
+      // ToR switch — placed below each rack
+      switches.push({
+        id: `tor_${rackId}`, type:'tor', rackId, podId: podCfg.id,
+        cx: rx + rackW/2, cy: ry + rackH + 28, r: 13,
+      });
+    }
+
+    // Spine switch — placed above each pod
+    switches.push({
+      id: `spine_${podCfg.id}`, type:'spine', podId: podCfg.id,
+      cx: curX + pw/2, cy: -54, w: pw * 0.45, h: 20,
+    });
+
+    curX += pw + L.interPodGap;
+  });
+
+  const totalW = curX - L.interPodGap;
+
+  // Core router — above all spines
+  const spineMinY = Math.min(...switches.filter(s=>s.type==='spine').map(s=>s.cy));
+  switches.push({
+    id: 'core', type:'core',
+    cx: totalW/2, cy: spineMinY - 52, w: 82, h: 22,
+  });
+
+  // Center everything around origin
+  const ox = -totalW/2, oy = -podH/2 - 30;
+  pods.forEach(p    => { p.x += ox;  p.y += oy; });
+  racks.forEach(r   => { r.x += ox;  r.y += oy + L.podPadTop; });
+  nodes.forEach(n   => { n.x += ox;  n.y += oy + L.podPadTop; });
+  switches.forEach(s => {
+    s.cx += ox;
+    s.cy  = s.type==='core' ? s.cy + oy : s.cy + oy + L.podPadTop;
+  });
+
+  const zone = {
+    type: 'zone', name: config.zone.name,
+    x: ox-70, y: oy-90, w: totalW+140, h: podH+170,
+  };
+
+  return { pods, racks, nodes, switches, zone };
+}
+
+// Build the topology once at startup.
+// To rebuild with a different config, call buildTopology() again and reassign.
+const TOPO = buildTopology(CLUSTER_CONFIG, LAYOUT);
+const { pods:PODS, racks:RACKS, nodes:NODES, switches:SWITCHES, zone:ZONE } = TOPO;
+const TOTAL_GPU = NODES.length * CLUSTER_CONFIG.node.gpuCount;
+
+// ─── Info panel content — generated from CLUSTER_CONFIG ─────────────────────
+// Maps entity type → { title, rows: [[key,value],...], desc }
+function buildInfoPanels(C) {
+  return {
+    gpu: {
+      title: `GPU — NVIDIA ${C.gpu.model}`,
+      rows: [
+        ['型号',    C.gpu.model],
+        ['显存',    `${C.gpu.vramGB} GB ${C.gpu.vramType}`],
+        ['显存带宽',`${C.gpu.vramBWTBs} TB/s`],
+        ['FP16算力',`${C.gpu.fp16TFLOPS} TFLOPS`],
+        ['NVLink',  `${C.gpu.nvlinkBWGBs} GB/s 双向`],
+        ['PCIe',    C.gpu.pcieLanes],
+        ['TDP',     `${C.gpu.tdpW} W`],
+      ],
+      desc:'GPU是集群核心，负责矩阵乘法和张量运算。8块H100通过NVSwitch以NVLink全互联，Any-to-Any带宽均为900GB/s，等效为单台640GB显存的超级GPU。',
+    },
+    cpu: {
+      title: `CPU — ${C.cpu.model} × ${C.node.cpuCount}`,
+      rows: [
+        ['核心数',  `${C.cpu.cores}核/${C.cpu.threads}线程 per socket`],
+        ['系统内存',`${C.node.ramTB} TB DDR5`],
+        ['PCIe',    `${C.cpu.pcieGen} Gen`],
+        ['作用',    C.cpu.role],
+      ],
+      desc:'CPU负责控制面：数据加载、CUDA Kernel调度、NCCL初始化。计算密集部分完全由GPU承担，CPU主要用于编排和DMA缓冲。',
+    },
+    nvswitch: {
+      title: 'NVSwitch — 节点内 GPU 互联',
+      rows: [
+        ['协议',   C.nvswitch.protocol],
+        ['带宽',   `${C.nvswitch.bwGBs} GB/s 全双工`],
+        ['延迟',   C.nvswitch.latency],
+        ['拓扑',   C.nvswitch.topology],
+        ['数量',   `${C.nvswitch.countPerNode}片 / ${C.node.model}`],
+      ],
+      desc:'将节点内8块GPU连成全互联Fabric，AllReduce不经CPU/PCIe直接完成，速度接近显存带宽上限，是节点内通信的核心。',
+    },
+    hbm: {
+      title: `${C.gpu.vramType} — 高带宽显存`,
+      rows: [
+        ['类型',   C.gpu.vramType],
+        ['容量',   `${C.gpu.vramGB} GB per GPU`],
+        ['带宽',   `${C.gpu.vramBWTBs} TB/s`],
+        ['堆叠',   '8层 Die Stack'],
+        ['位宽',   '5120-bit'],
+      ],
+      desc:'HBM采用3D堆叠封装集成在GPU基板，比GDDR6带宽高5倍。显存带宽是大模型Attention计算的关键瓶颈，直接决定序列长度和批大小上限。',
+    },
+    nic: {
+      title: `IB NIC — ${C.nic.model}`,
+      rows: [
+        ['型号',     C.nic.model],
+        ['协议',     C.nic.protocol],
+        ['带宽',     `${C.nic.bwGbps} Gb/s 双向`],
+        ['延迟',     `< ${C.nic.latencyNs} ns`],
+        ['数量',     `${C.nic.countPerNode}块/节点 = ${C.nic.totalTbps} Tb/s`],
+      ],
+      desc:'每GPU配一块400G NIC，支持GPUDirect RDMA——GPU显存数据无需经CPU直接通过NIC传输。8块NIC并联形成3.2Tb/s总带宽，保证AllReduce不成瓶颈。',
+    },
+    tor: {
+      title: 'ToR Switch — 机顶交换机',
+      rows: [
+        ['位置',   '每Rack顶部'],
+        ['协议',   C.tor.protocol],
+        ['端口',   `${C.tor.ports}口 QSFP-DD`],
+        ['延迟',   C.tor.latency],
+        ['上联',   `${C.tor.uplinkCount}×400G ECMP → Spine`],
+      ],
+      desc:'汇聚机架内节点的RDMA流量，GPUDirect RDMA让GPU显存数据不经CPU直达网络。下行连所有节点NIC，上行ECMP多路并联接Spine。',
+    },
+    spine: {
+      title: 'Spine Switch — 汇聚层',
+      rows: [
+        ['协议',   C.spine.protocol],
+        ['拓扑',   C.spine.topology],
+        ['收敛比', C.spine.ratio],
+        ['型号',   C.spine.model],
+      ],
+      desc:'Pod内无阻塞全带宽Fat-Tree交换，保证跨机架AllReduce不产生热点拥塞，是大规模训练通信质量的核心保障。',
+    },
+    core: {
+      title: 'Core Router — 核心路由层',
+      rows: [
+        ['协议',   C.core.protocol],
+        ['功能',   C.core.role],
+        ['连接',   'FSx/Lustre · S3 · 外网'],
+        ['延迟',   C.core.latency],
+      ],
+      desc:'Zone级别跨Pod路由和南北向流量，协议从高性能IB切换为标准TCP/IP。连接Lustre/FSx文件系统和S3——训练数据流入，Checkpoint写出。',
+    },
+    node: {
+      title: `Compute Node — ${C.node.model}`,
+      rows: [
+        ['GPU',     `${C.node.gpuCount}× ${C.gpu.model} ${C.gpu.vramGB}GB`],
+        ['CPU',     `${C.node.cpuCount}× ${C.cpu.model}`],
+        ['系统内存',`${C.node.ramTB} TB DDR5`],
+        ['NIC',     `${C.node.nicCount}× CX-7 ${C.nic.bwGbps}Gb/s`],
+        ['NVSwitch',`${C.node.nvswitchCount}片全互联`],
+        ['峰值算力', C.node.peakFlops],
+      ],
+      desc:`${C.node.model}是最小训练单元：${C.node.gpuCount}GPU通过NVSwitch全互联，每GPU独享${C.nic.bwGbps}G NIC。单节点总显存${C.node.gpuCount*C.gpu.vramGB}GB，IB总带宽${C.nic.totalTbps}Tb/s。`,
+    },
+    rack: {
+      title: 'Rack — 机架',
+      rows: [
+        ['高度',   `${C.rack.heightU}U 标准机架`],
+        ['节点数', `${C.rack.nodesPerRack} 台`],
+        ['GPU密度',`${C.rack.nodesPerRack * C.node.gpuCount} GPU/架`],
+        ['供电',   C.rack.powerKW],
+        ['散热',   C.rack.cooling],
+      ],
+      desc:'机架承载节点和ToR交换机。液冷管路直接对GPU散热，功率密度从风冷15kW提升至60kW+，是支撑H100高TDP的基础设施关键。',
+    },
+    pod: {
+      title: 'Pod — 集群组',
+      rows: [
+        ['规模',   `${C.pods[0].racksCount} Rack，${C.pods[0].racksCount * C.rack.nodesPerRack * C.node.gpuCount} GPU`],
+        ['内部网络','InfiniBand Fat-Tree'],
+        ['收敛比', '1:1 全带宽无阻塞'],
+        ['用途',   '单个大型训练作业域'],
+      ],
+      desc:'Pod是资源调度和网络隔离的基本域，同Pod内GPU通过IB Fat-Tree超低延迟通信，适合运行单个大规模分布式训练作业（如LLM预训练）。',
+    },
+    zone: {
+      title: `Availability Zone — 可用区`,
+      rows: [
+        ['GPU规模', C.zone.totalGPU + ' GPU'],
+        ['网络架构',C.zone.network],
+        ['存储',    C.zone.storage],
+        ['冗余',    C.zone.redundancy],
+      ],
+      desc:'可用区是物理数据中心独立分区，拥有独立供电和制冷系统。大型云厂商在单AZ内部署万卡级别集群。跨AZ通过DCI互联，延迟较高，通常仅用于灾备。',
+    },
+  };
+}
+const INFO = buildInfoPanels(CLUSTER_CONFIG);
+
+
+// ═══ LAYER 3: RENDERING + INTERACTION ═══
 // ─── EDGE METADATA ───────────────────────────────────────────────────────────
 const EDGE_META={
   nvlink:{
@@ -699,86 +1110,18 @@ function showPathResult(r){
   document.getElementById('path-result').style.display='block';
 }
 
-// ─── INFO ────────────────────────────────────────────────────────────────────
-const INFO={
-  gpu:{title:'GPU — NVIDIA H100 SXM5',rows:[['型号','H100 SXM5'],['显存','80 GB HBM3'],['显存带宽','3.35 TB/s'],['FP16算力','~1979 TFLOPS'],['NVLink','900 GB/s 双向'],['PCIe','Gen5 x16'],['TDP','700 W']],desc:'GPU是集群核心，负责矩阵乘法和张量运算。8块H100通过NVSwitch以NVLink全互联，Any-to-Any带宽均为900GB/s，等效为单台640GB显存的超级GPU。'},
-  cpu:{title:'CPU — AMD EPYC 9654 × 2',rows:[['核心数','96核/192线程 per socket'],['系统内存','2 TB DDR5'],['PCIe','128条 Gen5 通道'],['作用','调度·预处理·通信初始化']],desc:'CPU负责控制面：数据加载、CUDA Kernel调度、NCCL初始化。计算密集部分完全由GPU承担，CPU主要用于编排和DMA缓冲。'},
-  nvswitch:{title:'NVSwitch — 节点内 GPU 互联',rows:[['协议','NVLink 4.0'],['带宽','900 GB/s 全双工'],['延迟','< 1 μs'],['拓扑','全连接 All-to-All'],['数量','4片 / DGX H100']],desc:'将节点内8块GPU连成全互联Fabric，AllReduce不经CPU/PCIe直接完成，速度接近显存带宽上限，是节点内通信的核心。'},
-  hbm:{title:'HBM3 — 高带宽显存',rows:[['类型','HBM3'],['容量','80 GB per GPU'],['带宽','3.35 TB/s'],['堆叠','8层 Die Stack'],['位宽','5120-bit']],desc:'HBM采用3D堆叠封装集成在GPU基板，比GDDR6带宽高5倍。显存带宽是大模型Attention计算的关键瓶颈，直接决定序列长度和批大小上限。'},
-  nic:{title:'IB NIC — ConnectX-7 RDMA',rows:[['型号','Mellanox ConnectX-7'],['协议','InfiniBand NDR / RoCEv2'],['带宽','400 Gb/s 双向'],['延迟','< 600 ns'],['数量','8块/节点 = 3.2 Tb/s']],desc:'每GPU配一块400G NIC，支持GPUDirect RDMA——GPU显存数据无需经CPU直接通过NIC传输。8块NIC并联形成3.2Tb/s总带宽，保证AllReduce不成瓶颈。'},
-  tor:{title:'ToR Switch — 机顶交换机',rows:[['位置','每Rack顶部'],['协议','InfiniBand NDR 400Gb/s'],['端口','64口 QSFP-DD'],['延迟','100~300 ns'],['上联','4×400G ECMP → Spine']],desc:'汇聚机架内节点的RDMA流量，GPUDirect RDMA让GPU显存数据不经CPU直达网络。下行连所有节点NIC，上行ECMP多路并联接Spine。'},
-  spine:{title:'Spine Switch — 汇聚层',rows:[['协议','InfiniBand NDR/HDR'],['拓扑','Fat-Tree'],['收敛比','1:1 无阻塞'],['型号','NVIDIA Quantum-2 QM9700']],desc:'Pod内无阻塞全带宽Fat-Tree交换，保证跨机架AllReduce不产生热点拥塞，是大规模训练通信质量的核心保障。'},
-  core:{title:'Core Router — 核心路由层',rows:[['协议','Ethernet 400GbE'],['功能','跨Pod路由'],['连接','FSx/Lustre · S3 · 外网'],['TCP/IP','管控面和存储面']],desc:'Zone级别跨Pod路由和南北向流量，协议从高性能IB切换为标准TCP/IP。连接Lustre/FSx文件系统和S3——训练数据流入，Checkpoint写出。'},
-  node:{title:'Compute Node — DGX H100',rows:[['GPU','8× H100 SXM5 80GB'],['CPU','2× EPYC 9654'],['系统内存','2 TB DDR5'],['NIC','8× CX-7 400Gb/s'],['NVSwitch','4片全互联'],['峰值算力','~15.8 PFLOPS FP8']],desc:'DGX H100是最小训练单元：8GPU通过NVSwitch全互联，每GPU独享400G NIC。单节点总显存640GB，IB总带宽3.2Tb/s，是目前最高密度AI训练服务器。'},
-  rack:{title:'Rack — 机架',rows:[['高度','42U 标准机架'],['节点数','2 台（本图示）'],['GPU密度','16 GPU/架'],['供电','30~60 kW/架'],['散热','液冷 Direct Water Cooling']],desc:'机架承载节点和ToR交换机。液冷管路直接对GPU散热，功率密度从风冷15kW提升至60kW+，是支撑H100高TDP的基础设施关键。'},
-  pod:{title:'Pod — 集群组',rows:[['规模','3~5 Rack，256~640 GPU'],['内部网络','InfiniBand Fat-Tree'],['收敛比','1:1 全带宽无阻塞'],['用途','单个大型训练作业域']],desc:'Pod是资源调度和网络隔离的基本域，同Pod内GPU通过IB Fat-Tree超低延迟通信，适合运行单个大规模分布式训练作业（如LLM预训练）。'},
-  zone:{title:'Availability Zone — 可用区',rows:[['GPU规模','35,000+ GPU'],['网络架构','三层 Spine-Leaf + Core'],['存储','FSx Lustre / EFS / S3'],['冗余','独立供电 + 双路制冷']],desc:'可用区是物理数据中心独立分区，拥有独立供电和制冷系统。大型云厂商在单AZ内部署万卡级别集群。跨AZ通过DCI互联，延迟较高，通常仅用于灾备，不参与训练通信。'},
-};
+
+// ─── INFO PANEL ───────────────────────────────────────────────────────────────
 function showInfo(type){
-  const p=document.getElementById('info'),info=INFO[type];
-  if(!info){p.style.display='none';return}
+  const p=document.getElementById('info'), info=INFO[type];
+  if(!info){p.style.display='none';return;}
   p.style.display='block';
   document.getElementById('i-title').textContent=info.title;
-  document.getElementById('i-rows').innerHTML=info.rows.map(([k,v])=>`<div class="irow"><span class="ikey">${k}</span><span class="ival">${v}</span></div>`).join('');
+  document.getElementById('i-rows').innerHTML=info.rows
+    .map(([k,v])=>`<div class="irow"><span class="ikey">${k}</span><span class="ival">${v}</span></div>`)
+    .join('');
   document.getElementById('i-desc').textContent=info.desc;
 }
-
-// ─── LAYOUT ──────────────────────────────────────────────────────────────────
-// Node inner layout (all in world-px):
-//   y+0..y+NH (NH=116)
-//   Header row y+6..y+30:  CPU0(x+4,6,44,24)  CPU1(x+52,6,44,24)  NVSw circle(x+118,18,r=11)  HBM(x+134,8,28,18)  NIC(x+166,8,46,18)
-//   GPU row1   y+36..y+64: G0(x+4) G1(x+56) G2(x+108) G3(x+160)  each 48×28
-//   GPU row2   y+72..y+100: G4 G5 G6 G7
-// Total: max y = 100, + 16 padding = 116 ✓
-const NW=260, NH=170;
-const GW=54,  GH=26;   // GPU
-const CW=52,  CH=22;   // CPU
-const RACK_PX=8, RACK_PT=30, RACK_NG=14;
-const RACK_W=NW+RACK_PX*2;   // 276
-const RACK_H=RACK_PT+NH*2+RACK_NG+10;  // 30+340+14+10=394
-const POD_GAP=16, POD_PX=20, POD_PT=34, POD_PB=64;
-const INTER_POD=44;
-function podW(n){return POD_PX*2+n*RACK_W+(n-1)*POD_GAP}
-function podH(){return POD_PT+RACK_H+POD_PB}
-
-const podDefs=[
-  {id:'pod0',name:'Pod A — Training',  n:5,fill:'rgba(28,24,70,0.55)',  stroke:'rgba(139,92,246,0.25)'},
-  {id:'pod1',name:'Pod B — Training',  n:5,fill:'rgba(26,22,20,0.55)',  stroke:'rgba(139,92,246,0.25)'},
-  {id:'pod2',name:'Pod C — Inference', n:3,fill:'rgba(18,38,25,0.55)',  stroke:'rgba(34,197,94,0.22)'},
-];
-const PODS=[],RACKS=[],NODES=[],SWITCHES=[];
-let cx2=0;
-podDefs.forEach((pd,pi)=>{
-  const pw=podW(pd.n),ph=podH();
-  const pod={...pd,x:cx2,y:0,w:pw,h:ph,rackIds:[]};
-  PODS.push(pod);
-  for(let ri=0;ri<pd.n;ri++){
-    const rx=cx2+POD_PX+ri*(RACK_W+POD_GAP),ry=POD_PT;
-    const rid=`${pd.id}_r${ri}`;
-    const rack={id:rid,podId:pd.id,name:`Rack ${String.fromCharCode(65+pi)}-0${ri+1}`,x:rx,y:ry,w:RACK_W,h:RACK_H,nodeIds:[]};
-    RACKS.push(rack);pod.rackIds.push(rid);
-    for(let ni=0;ni<2;ni++){
-      const nid=`${rid}_n${ni}`;
-      NODES.push({id:nid,rackId:rid,name:`Node ${ri+1}-0${ni+1}`,x:rx+RACK_PX,y:ry+RACK_PT+ni*(NH+RACK_NG),w:NW,h:NH});
-      rack.nodeIds.push(nid);
-    }
-    SWITCHES.push({id:`tor_${rid}`,type:'tor',rackId:rid,cx:rx+RACK_W/2,cy:ry+RACK_H+28});
-  }
-  SWITCHES.push({id:`spine_${pd.id}`,type:'spine',podId:pd.id,cx:cx2+pw/2,cy:-54,w:pw*0.45,h:20});
-  cx2+=pw+INTER_POD;
-});
-const AW=cx2-INTER_POD,AH=podH();
-const OX=-AW/2,OY=-AH/2-30;
-PODS.forEach(p=>{p.x+=OX;p.y+=OY});
-RACKS.forEach(r=>{r.x+=OX;r.y+=OY+POD_PT});
-NODES.forEach(n=>{n.x+=OX;n.y+=OY+POD_PT});
-SWITCHES.forEach(s=>{s.cx+=OX;s.cy=s.cy<0?s.cy+OY:s.cy+OY+POD_PT});
-const coreY=Math.min(...SWITCHES.filter(s=>s.type==='spine').map(s=>s.cy))-52;
-SWITCHES.push({id:'core',type:'core',cx:OX+AW/2,cy:coreY,w:82,h:22});
-const ZONE={x:OX-70,y:OY-90,w:AW+140,h:AH+170};
-
-// ─── JOB PLACEMENT + FRAGMENTATION ──────────────────────────────────────────
-const TOTAL_GPU = NODES.length * 8;
 
 // ─── CANVAS & CAMERA ─────────────────────────────────────────────────────────
 const canvas=document.getElementById('cv');
