@@ -40,6 +40,8 @@ function buildTopology(config, layout) {
   const podW  = n => L.podPadX*2 + n*rackW + (n-1)*L.podGap;
 
   let curX = 0;
+  let nodeCounter = 0;
+  let rackCounter = 0;
   cfg.pods.forEach((podCfg, pi) => {
     const pw = podW(podCfg.racksCount);
     const theme = POD_THEMES[podCfg.theme] || POD_THEMES.purple;
@@ -57,7 +59,7 @@ function buildTopology(config, layout) {
       const rackId = `${podCfg.id}_r${ri}`;
       const rack = {
         id: rackId, type:'rack', podId: podCfg.id,
-        name: `Rack ${String.fromCharCode(65+pi)}-0${ri+1}`,
+        name: `Rack ${++rackCounter}`,
         x: rx, y: ry, w: rackW, h: rackH, nodeIds: [],
       };
       racks.push(rack);
@@ -68,7 +70,7 @@ function buildTopology(config, layout) {
         const ny = ry + L.rackPadTop + ni*(NH + L.nodeGap);
         nodes.push({
           id: nodeId, type:'node', rackId, podId: podCfg.id,
-          name: `Node ${ri+1}-0${ni+1}`,
+          name: `Node ${++nodeCounter}`,
           x: rx + L.rackPadX, y: ny, w: NW, h: NH,
         });
         rack.nodeIds.push(nodeId);
