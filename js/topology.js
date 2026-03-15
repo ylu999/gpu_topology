@@ -176,12 +176,13 @@ function buildInfoPanels(C) {
       title: `IB NIC — ${C.nic.model}`,
       rows: [
         ['型号',     C.nic.model],
-        ['协议',     C.nic.protocol],
+        ['协议',     'InfiniBand NDR / RoCEv2'],
         ['带宽',     `${C.nic.bwGbps} Gb/s 双向`],
         ['延迟',     `< ${C.nic.latencyNs} ns`],
         ['数量',     `${C.nic.countPerNode}块/节点 = ${C.nic.totalTbps} Tb/s`],
+        ['RoCEv2',   'RDMA over UDP/IP，可跨子网'],
       ],
-      desc:'每GPU配一块400G NIC，支持GPUDirect RDMA——GPU显存数据无需经CPU直接通过NIC传输。8块NIC并联形成3.2Tb/s总带宽，保证AllReduce不成瓶颈。',
+      desc:'ConnectX-7 同时支持 InfiniBand 和 RoCEv2 双模式——IB 模式用于高性能训练集群（CoreWeave/AWS UltraCluster），RoCEv2 模式用于大规模以太网集群（Meta/微软/字节）。两种模式都支持 GPUDirect RDMA，GPU 显存数据零拷贝直达网络，不经 CPU。',
     },
     tor: {
       title: 'ToR Switch — 机顶交换机',

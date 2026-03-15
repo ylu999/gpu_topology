@@ -168,6 +168,16 @@ export const EDGE_META = {
     use:'跨节点 RDMA 训练通信；8 NIC 绑定实现每节点 3.2 Tb/s，不经 CPU',
     color:'rgba(6,182,212,0.85)',
   },
+  rocev2:{
+    protocol:'RoCEv2 (RDMA over Converged Ethernet v2)',
+    bw:'400 Gb/s per NIC',
+    node_total:'3.2 Tb/s (8 NIC × 400G)',
+    latency:'1–3 μs (vs IB < 600ns)',
+    rdma:'GPUDirect RDMA — 零拷贝',
+    encoding:'UDP/IP over Ethernet',
+    use:'同一块 ConnectX-7 可切换 IB/RoCEv2 双模；Meta/微软/字节等大厂用 RoCEv2 替换 IB，交换机成本更低，可水平扩展到更大规模',
+    color:'rgba(34,197,94,0.85)',
+  },
   eth:{
     protocol:'Ethernet 400GbE',
     bw:'400 Gb/s',

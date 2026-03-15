@@ -706,7 +706,7 @@ function buildNodesChip() {
       nicg.append('rect')
         .attr('x', nx2).attr('y', ny).attr('width', NIC_W).attr('height', NIC_H).attr('rx', 2)
         .attr('fill', 'rgba(6,78,59,0.78)').attr('stroke', '#22c55e').attr('stroke-width', 0.7);
-      svgText(nicg, nx2 + NIC_W/2, ny + NIC_H/2, `NIC ${n}`,
+      svgText(nicg, nx2 + NIC_W/2, ny + NIC_H/2, `NIC ${n}  IB/RoCE`,
         {fs:8, fill:'#86efac'});
 
       // NIC → matching GPU: short direct line, same column, no crossing
