@@ -585,30 +585,26 @@ function buildNodesChip() {
     svgText(lChips, nd.x + NW/2, nd.y + 50, 'NVLink 4.0 All-to-All Fabric',
       {fs:8, fill:'rgba(167,139,250,0.4)'});
 
-    // ── NVLink Fabric Bus Bars ──────────────────────────────────────────────
-    // Two horizontal bus bars (one per GPU row), NVSwitches tap off vertically.
-    // Much cleaner than 32 crossing lines.
-    const BUS_Y = [GPU_Y[0] - 10, GPU_Y[1] + GH + 10]; // above row0, below row1
-    const BUS_X1 = nd.x + 4 + GW/2;                    // left edge of GPU col 0 center
-    const BUS_X2 = nd.x + 4 + 3*GPU_STRIDE + GW/2;     // right edge of GPU col 3 center
+    // NVLink Fabric Bus Bar — single bar above GPU row 0, NVSwitches tap down, GPUs tap up
+    const BUS_X1 = nd.x + 4 + GW/2;
+    const BUS_X2 = nd.x + 4 + 3*GPU_STRIDE + GW/2;
+    const BUS_Y_TOP = nd.y + GPU_Y[0] - 10; // just above GPU row 0, below NVSwitches
 
-    BUS_Y.forEach((by, row) => {
-      // horizontal bus bar
-      lNvlink.append('line')
-        .attr('class', 'edge-nvlink nvlink-bus')
-        .attr('x1', BUS_X1).attr('y1', by)
-        .attr('x2', BUS_X2).attr('y2', by)
-        .attr('stroke', 'rgba(249,115,22,0.55)').attr('stroke-width', 2)
-        .style('cursor', 'pointer')
-        .attr('data-etype', 'nvlink');
-    });
+    // horizontal bus bar
+    lNvlink.append('line')
+      .attr('class', 'edge-nvlink nvlink-bus')
+      .attr('x1', BUS_X1).attr('y1', BUS_Y_TOP)
+      .attr('x2', BUS_X2).attr('y2', BUS_Y_TOP)
+      .attr('stroke', 'rgba(249,115,22,0.55)').attr('stroke-width', 2)
+      .style('cursor', 'pointer')
+      .attr('data-etype', 'nvlink');
 
-    // NVSwitch vertical taps — only tap to UPPER bus bar (no lower tap to avoid crossing GPUs)
-    nvSW.forEach((sw, si) => {
+    // NVSwitch taps DOWN to bus bar (NVSwitch bottom → bus bar, no GPU in between)
+    nvSW.forEach((sw) => {
       lNvlink.append('line')
         .attr('class', 'edge-nvlink nvlink-tap')
         .attr('x1', sw.cx).attr('y1', sw.cy + NVS_R)
-        .attr('x2', sw.cx).attr('y2', BUS_Y[0])
+        .attr('x2', sw.cx).attr('y2', BUS_Y_TOP)
         .attr('stroke', 'rgba(249,115,22,0.4)').attr('stroke-width', 1.2)
         .style('cursor', 'pointer')
         .attr('data-etype', 'nvlink');
@@ -642,15 +638,25 @@ function buildNodesChip() {
       const gx = nd.x + 4 + col * GPU_STRIDE;
       const gy = nd.y + GPU_Y[row];
 
-      // NVLink stub: GPU → bus bar (short vertical line)
-      const busY = BUS_Y[row];
-      lNvlink.append('line')
-        .attr('class', 'edge-nvlink nvlink-stub')
-        .attr('x1', gx + GW/2).attr('y1', row === 0 ? gy : gy + GH)
-        .attr('x2', gx + GW/2).attr('y2', busY)
-        .attr('stroke', 'rgba(249,115,22,0.5)').attr('stroke-width', 1)
-        .style('cursor', 'pointer')
-        .attr('data-etype', 'nvlink');
+      // NVLink stub: GPU row 0 taps UP to bus bar; row 1 taps DOWN to lower label area (no crossing)
+      if (row === 0) {
+        lNvlink.append('line')
+          .attr('class', 'edge-nvlink nvlink-stub')
+          .attr('x1', gx + GW/2).attr('y1', gy)
+          .attr('x2', gx + GW/2).attr('y2', BUS_Y_TOP)
+          .attr('stroke', 'rgba(249,115,22,0.5)').attr('stroke-width', 1)
+          .style('cursor', 'pointer')
+          .attr('data-etype', 'nvlink');
+      } else {
+        // row 1: short stub DOWN from GPU bottom (no line up through row 0)
+        lNvlink.append('line')
+          .attr('class', 'edge-nvlink nvlink-stub')
+          .attr('x1', gx + GW/2).attr('y1', gy + GH)
+          .attr('x2', gx + GW/2).attr('y2', gy + GH + 6)
+          .attr('stroke', 'rgba(249,115,22,0.3)').attr('stroke-width', 1)
+          .style('cursor', 'pointer')
+          .attr('data-etype', 'nvlink');
+      }
 
       // PCIe stub: only show for row 0 GPUs (row 1 stubs would cross row 0 GPUs)
       if (row === 0) {
@@ -709,17 +715,13 @@ function buildNodesChip() {
       svgText(nicg, nx2 + NIC_W/2, ny + NIC_H/2, `NIC ${n}  IB/RoCE`,
         {fs:8, fill:'#86efac'});
 
-      // NIC → matching GPU: short direct line, same column, no crossing
-      // NIC row 0 (n<4) → GPU row 0, NIC row 1 (n>=4) → GPU row 1
-      // Line goes straight up from NIC top to GPU bottom — no crossing since same column
-      const nicGpuX = nd.x + 4 + col * GPU_STRIDE + GW/2;
-      const nicGpuBotY = nd.y + GPU_Y[row] + GH;
+      // NIC: short stub upward only (avoids crossing GPU rows)
+      // 1:1 relationship explained in info panel
       lPcie.append('line')
         .attr('class', 'edge-nic-gpu')
-        .attr('x1', nicGpuX).attr('y1', ny)
-        .attr('x2', nicGpuX).attr('y2', nicGpuBotY)
+        .attr('x1', nx2 + NIC_W/2).attr('y1', ny)
+        .attr('x2', nx2 + NIC_W/2).attr('y2', ny - 8)
         .attr('stroke', 'rgba(34,197,94,0.5)').attr('stroke-width', 0.8)
-        .attr('stroke-dasharray', '2 2')
         .style('cursor', 'pointer')
         .attr('data-etype', 'ib');
     }
