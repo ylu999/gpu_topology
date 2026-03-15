@@ -180,8 +180,8 @@ function drawZone(){
 function drawZoneLabel(){
   const z=ZONE,lod=getLOD(camS);
   if(lod<2){
-    txt('Availability Zone',z.x+16,z.y+18,18,'rgba(147,197,253,0.55)','left',undefined,true);
-    txt('35,000+ GPU · 3 Pods · InfiniBand Fat-Tree + Ethernet Core',z.x+16,z.y+42,12,'rgba(147,197,253,0.25)','left');
+    txt('Availability Zone',z.x+16,z.y+18,22,'rgba(147,197,253,0.55)','left',undefined,true);
+    txt('35,000+ GPU · 3 Pods · InfiniBand Fat-Tree + Ethernet Core',z.x+16,z.y+42,14,'rgba(147,197,253,0.25)','left');
   }
 }
 
@@ -189,7 +189,7 @@ function drawPods(){
   PODS.forEach(p=>{
     rr(p.x,p.y,p.w,p.h,10);
     fillStroke(p.fill,p.stroke,0.9/camS);
-    txt(p.name,p.x+12,p.y+18,14,'rgba(196,181,253,0.85)','left',undefined,true);
+    txt(p.name,p.x+12,p.y+18,17,'rgba(196,181,253,0.85)','left',undefined,true);
   });
 }
 
@@ -197,7 +197,7 @@ function drawRacks(){
   RACKS.forEach(r=>{
     rr(r.x,r.y,r.w,r.h,5);
     fillStroke('rgba(6,182,212,0.05)','rgba(6,182,212,0.22)',0.7/camS);
-    txt(r.name,r.x+r.w/2,r.y+14,12,'rgba(103,232,249,0.8)');
+    txt(r.name,r.x+r.w/2,r.y+14,14,'rgba(103,232,249,0.8)');
   });
 }
 
@@ -231,18 +231,18 @@ function drawSwitches(){
   if(core){
     rr(core.cx-core.w/2,core.cy-core.h/2,core.w,core.h,4);
     fillStroke('rgba(34,197,94,0.22)','rgba(34,197,94,0.7)',1/camS);
-    txt('Core Router',core.cx,core.cy,11,'#86efac');
+    txt('Core Router',core.cx,core.cy,13,'#86efac');
   }
   spines.forEach(sp=>{
     rr(sp.cx-sp.w/2,sp.cy-sp.h/2,sp.w,sp.h,4);
     fillStroke('rgba(34,197,94,0.14)','rgba(34,197,94,0.45)',0.9/camS);
-    txt(sp.podId.replace('pod','Pod '),sp.cx,sp.cy,10,'rgba(134,239,172,0.85)');
+    txt(sp.podId.replace('pod','Pod '),sp.cx,sp.cy,12,'rgba(134,239,172,0.85)');
   });
   if(camS>0.2) tors.forEach(tor=>{
     const r=13/camS;
     ctx.beginPath();ctx.arc(tor.cx,tor.cy,r,0,Math.PI*2);
     fillStroke('rgba(6,182,212,0.16)','rgba(6,182,212,0.65)',0.9/camS);
-    if(camS>0.2)txt('ToR',tor.cx,tor.cy,10,'#67e8f9');
+    if(camS>0.2)txt('ToR',tor.cx,tor.cy,12,'#67e8f9');
   });
 }
 
@@ -250,8 +250,8 @@ function drawNodesMini(){
   NODES.forEach(nd=>{
     rr(nd.x,nd.y,nd.w,nd.h,4);
     fillStroke('rgba(12,18,36,0.97)','rgba(34,197,94,0.32)',0.7/camS);
-    txt(nd.name,nd.x+5,nd.y+6,11,'rgba(134,239,172,0.8)','left',undefined,true);
-    txt('8× H100',nd.x+nd.w-4,nd.y+6,11,'rgba(251,146,60,0.65)','right');
+    txt(nd.name,nd.x+5,nd.y+6,13,'rgba(134,239,172,0.8)','left',undefined,true);
+    txt('8× H100',nd.x+nd.w-4,nd.y+6,13,'rgba(251,146,60,0.65)','right');
 
     [0,1].forEach(c=>{
       rr(nd.x+4+c*50,nd.y+7,42,20,2);
@@ -265,7 +265,7 @@ function drawNodesMini(){
       const gx=nd.x+6+col*(gw+4),gy=nd.y+34+row*(gh+5);
       rr(gx,gy,gw,gh,2);
       fillStroke('rgba(249,115,22,0.62)','rgba(249,115,22,0.45)',0.4/camS);
-      txt(`G${g}`,gx+gw/2,gy+gh/2,10,'rgba(255,255,255,0.85)');
+      txt(`G${g}`,gx+gw/2,gy+gh/2,12,'rgba(255,255,255,0.85)');
     }
 
     if(lv.nvlink){
@@ -292,22 +292,22 @@ function drawNodesChip(){
     rr(nd.x,nd.y,nd.w,nd.h,5);
     fillStroke('rgba(10,16,32,0.97)','rgba(34,197,94,0.35)',0.6/camS);
 
-    txt(nd.name,   nd.x+5,      nd.y+10,11,'rgba(134,239,172,0.85)','left',undefined,true);
-    txt('DGX H100',nd.x+nd.w-5, nd.y+10,10,'rgba(134,239,172,0.3)','right');
+    txt(nd.name,   nd.x+5,      nd.y+10,13,'rgba(134,239,172,0.85)','left',undefined,true);
+    txt('DGX H100',nd.x+nd.w-5, nd.y+10,12,'rgba(134,239,172,0.3)','right');
 
     const cpuY=nd.y+18;
     const cpu=[[nd.x+4,cpuY],[nd.x+60,cpuY]];
     cpu.forEach(([cpx,cpy],c)=>{
       rr(cpx,cpy,CW,CH,2);
       fillStroke('rgba(59,130,246,0.78)','#60a5fa',0.8/camS);
-      txt(`CPU${c}`,cpx+CW/2,cpy+CH/2,11,'#fff');
+      txt(`CPU${c}`,cpx+CW/2,cpy+CH/2,13,'#fff');
     });
 
     if(lv.pcie){
       line(cpu[0][0]+CW, cpuY+CH/2, cpu[1][0], cpuY+CH/2,
            'rgba(147,197,253,0.55)', 1.2/camS);
       pushEdge(cpu[0][0]+CW, cpuY+CH/2, cpu[1][0], cpuY+CH/2, 'upi', 4);
-      txt('UPI',nd.x+58,cpuY+CH/2,9,'rgba(147,197,253,0.5)');
+      txt('UPI',nd.x+58,cpuY+CH/2,11,'rgba(147,197,253,0.5)');
     }
 
     const nvSW=NVS_CX.map(dx=>({cx:nd.x+dx,cy:nd.y+NVS_CY}));
@@ -316,7 +316,7 @@ function drawNodesChip(){
       fillStroke('rgba(139,92,246,0.1)','rgba(139,92,246,0.3)',0.4/camS);
       ctx.beginPath();ctx.arc(sw.cx,sw.cy,NVS_R,0,Math.PI*2);
       fillStroke('rgba(139,92,246,0.88)','#a78bfa',0.9/camS);
-      txt(`SW${si}`,sw.cx,sw.cy,9,'#fff');
+      txt(`NVSwitch ${si}`,sw.cx,sw.cy,10,'#fff');
 
       if(lv.pcie){
         const ci=si<2?0:1;
@@ -326,7 +326,7 @@ function drawNodesChip(){
         pushEdge(sw.cx, sw.cy-NVS_R, cpx+CW/2, cpy+CH, 'pcie', 4);
       }
     });
-    txt('NVSwitch ×4 — NVLink 4.0 All-to-All Fabric',nd.x+NW/2,nd.y+47,9,'rgba(167,139,250,0.45)');
+    txt('NVSwitch ×4 — NVLink 4.0 All-to-All Fabric',nd.x+NW/2,nd.y+47,11,'rgba(167,139,250,0.45)');
 
     for(let g=0;g<8;g++){
       const col=g%4,row=Math.floor(g/4);
@@ -351,14 +351,14 @@ function drawNodesChip(){
 
       rr(gx,gy,GW,GH,3);
       fillStroke('rgba(249,115,22,0.82)','#fb923c',0.9/camS);
-      txt(`G${g}`,gx+GW/2,gy+10,11,'#fff',undefined,undefined,true);
+      txt(`G${g}`,gx+GW/2,gy+10,13,'#fff',undefined,undefined,true);
 
       rr(gx+2,gy+GH-9,GW-4,7,1);
       fillStroke('rgba(14,116,144,0.7)','#06b6d4',0.4/camS);
-      txt('HBM 80G',gx+GW/2,gy+GH-5.5,7.5,'#67e8f9');
+      txt('HBM 80G',gx+GW/2,gy+GH-5.5,9,'#67e8f9');
     }
 
-    txt('IB NIC ×8 — ConnectX-7 (1 NIC per GPU, GPUDirect RDMA)',nd.x+NW/2,nd.y+NIC_Y-6,9,'rgba(134,239,172,0.35)');
+    txt('IB NIC ×8 — ConnectX-7 (1 NIC per GPU, GPUDirect RDMA)',nd.x+NW/2,nd.y+NIC_Y-6,11,'rgba(134,239,172,0.35)');
     for(let n=0;n<8;n++){
       const col=n%4,row=Math.floor(n/4);
       const nx2=nd.x+4+col*GPU_STRIDE+(GPU_STRIDE-NIC_W)/2;
@@ -366,7 +366,7 @@ function drawNodesChip(){
 
       rr(nx2,ny,NIC_W,NIC_H,2);
       fillStroke('rgba(6,78,59,0.78)','#22c55e',0.7/camS);
-      txt(`N${n}`,nx2+NIC_W/2,ny+NIC_H/2,8,'#86efac');
+      txt(`N${n}`,nx2+NIC_W/2,ny+NIC_H/2,10,'#86efac');
 
       if(lv.pcie){
         const gx=nd.x+4+col*GPU_STRIDE;
