@@ -43,10 +43,21 @@ Availability Zone (35,000+ GPU)
 > **注意**：4 个 NVSwitch 之间**不直接互联**。  
 > GPU A→GPU B 的路径是 `GPU A → 任意 NVSwitch → GPU B`，单跳即达，无需 Switch 间通信。
 
-## 文件
+## 文件结构
 
 ```
 gpu_topology/
-├── index.html   # 主文件，全部逻辑内联
-└── README.md    # 本文件
+├── index.html          — 入口 HTML；加载 CSS + JS 模块，仅含 UI 标记
+├── css/
+│   └── style.css       — 全部样式
+├── js/
+│   ├── data.js         — LAYER 1：ENTITY_TYPES, LINK_TYPES, CLUSTER_CONFIG, POD_THEMES, EDGE_META
+│   ├── topology.js     — LAYER 2：LAYOUT, buildTopology(), buildInfoPanels()，导出 TOPO/PODS/RACKS/NODES/SWITCHES/ZONE/TOTAL_GPU/INFO
+│   ├── renderer.js     — LAYER 3：draw*, canvas 设置，camera，LOD，resize，hit testing
+│   ├── interaction.js  — 鼠标/触摸事件，缩放/平移，层级跳转，链路切换（模块入口）
+│   ├── jobs.js         — Job Placement Simulator：placeJob, addJob, removeJob, clearJobs, drawJobs, fragScore
+│   └── paths.js        — RDMA 路径追踪：computePath, drawPath, togglePathMode, clearPath，路径动画
+└── README.md
 ```
+
+纯 ES 模块，无构建步骤，可直接通过 GitHub Pages 或本地 HTTP 服务器访问。
