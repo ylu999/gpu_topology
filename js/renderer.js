@@ -64,7 +64,7 @@ export function updateLOD(k) {
   // zone labels only shown at lod < 2
   lZone.selectAll('.zone-lbl1, .zone-lbl2').style('display', lod < 2 ? null : 'none');
   lPods.style('display',  (lod >= 1) ? null : 'none');
-  lRacks.style('display', (lod >= 2) ? null : 'none');
+  lRacks.style('display', (lod >= 2 && lod < 4) ? null : 'none');
   lNodes.style('display', (lod === 3) ? null : 'none');
   lChips.style('display', (lod >= 4) ? null : 'none');
   // nvlink/pcie visibility: lod>=4 AND their toggle
@@ -257,7 +257,7 @@ function buildRacks() {
     g.append('text')
       .attr('x', r.x + r.w/2).attr('y', r.y + 14)
       .attr('fill', 'rgba(103,232,249,0.8)')
-      .attr('font-size', 22)
+      .attr('font-size', 13)
       .attr('font-family', '"SF Mono",Consolas,monospace')
       .attr('text-anchor', 'middle')
       .attr('dominant-baseline', 'hanging')
@@ -395,7 +395,7 @@ function buildNodesMini() {
 
     g.append('text')
       .attr('x', nd.x + 5).attr('y', nd.y + 6)
-      .attr('fill', 'rgba(134,239,172,0.8)').attr('font-size', 20).attr('font-weight', 600)
+      .attr('fill', 'rgba(134,239,172,0.8)').attr('font-size', 11).attr('font-weight', 600)
       .attr('font-family', '"SF Mono",Consolas,monospace')
       .attr('dominant-baseline', 'hanging')
       .attr('pointer-events', 'none')
@@ -403,7 +403,7 @@ function buildNodesMini() {
 
     g.append('text')
       .attr('x', nd.x + nd.w - 4).attr('y', nd.y + 6)
-      .attr('fill', 'rgba(251,146,60,0.65)').attr('font-size', 20)
+      .attr('fill', 'rgba(251,146,60,0.65)').attr('font-size', 10)
       .attr('font-family', '"SF Mono",Consolas,monospace')
       .attr('text-anchor', 'end').attr('dominant-baseline', 'hanging')
       .attr('pointer-events', 'none')
@@ -480,7 +480,7 @@ function buildNodesChip() {
 
     ng.append('text')
       .attr('x', nd.x + 5).attr('y', nd.y + 10)
-      .attr('fill', 'rgba(134,239,172,0.85)').attr('font-size', 20).attr('font-weight', 600)
+      .attr('fill', 'rgba(134,239,172,0.85)').attr('font-size', 11).attr('font-weight', 600)
       .attr('font-family', '"SF Mono",Consolas,monospace')
       .attr('dominant-baseline', 'hanging')
       .attr('pointer-events', 'none')
@@ -488,7 +488,7 @@ function buildNodesChip() {
 
     ng.append('text')
       .attr('x', nd.x + nd.w - 5).attr('y', nd.y + 10)
-      .attr('fill', 'rgba(134,239,172,0.3)').attr('font-size', 18)
+      .attr('fill', 'rgba(134,239,172,0.3)').attr('font-size', 10)
       .attr('font-family', '"SF Mono",Consolas,monospace')
       .attr('text-anchor', 'end').attr('dominant-baseline', 'hanging')
       .attr('pointer-events', 'none')
@@ -730,13 +730,16 @@ function buildNodesChip() {
         .attr('pointer-events', 'none')
         .text(`NIC ${n}`);
 
-      // NIC → PCIe bus bar (short stub up)
+      // NIC → matching GPU (1 NIC per GPU, GPUDirect RDMA)
+      // NIC n maps to GPU n — same col/row, draw a vertical line between them
+      const gpuForNic_x = nd.x + 4 + col * GPU_STRIDE + GW/2;
+      const gpuForNic_y = nd.y + GPU_Y[row] + GH;
       lPcie.append('line')
         .attr('class', 'edge-nic-gpu')
-        .attr('x1', nx2 + NIC_W/2).attr('y1', ny)
-        .attr('x2', nx2 + NIC_W/2).attr('y2', PCIE_BUS_Y)
-        .attr('stroke', 'rgba(34,197,94,0.35)').attr('stroke-width', 0.6)
-        .attr('stroke-dasharray', '1.5 2')
+        .attr('x1', gpuForNic_x).attr('y1', gpuForNic_y)
+        .attr('x2', gpuForNic_x).attr('y2', ny)
+        .attr('stroke', 'rgba(34,197,94,0.45)').attr('stroke-width', 0.8)
+        .attr('stroke-dasharray', '2 2')
         .style('cursor', 'pointer')
         .attr('data-etype', 'ib');
     }
