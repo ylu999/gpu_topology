@@ -594,6 +594,12 @@ const INFO = buildInfoPanels(CLUSTER_CONFIG);
 
 
 // ═══ LAYER 3: RENDERING + INTERACTION ═══
+// ─── Rendering aliases (shorthand from LAYOUT) ──────────────────────────────
+// These mirror LAYOUT constants so draw functions stay concise.
+const NW=LAYOUT.nodeW,  NH=LAYOUT.nodeH;   // node box
+const GW=LAYOUT.gpuW,   GH=LAYOUT.gpuH;   // GPU chip
+const CW=LAYOUT.cpuW,   CH=LAYOUT.cpuH;   // CPU chip
+
 // ─── EDGE METADATA ───────────────────────────────────────────────────────────
 const EDGE_META={
   nvlink:{
