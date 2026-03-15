@@ -146,10 +146,11 @@ export function rr(x,y,w,h,r=4){
 }
 export function fillStroke(fill,stroke,lw=1){ctx.fillStyle=fill;ctx.fill();ctx.strokeStyle=stroke;ctx.lineWidth=lw;ctx.stroke()}
 export function txt(s,x,y,sz,col,align='center',base='middle',bold=false){
-  const sx=(x+camX)*camS+W/2, sy=(y+camY)*camS+H/2;
+  const dpr = window.devicePixelRatio || 1;
+  const sx=((x+camX)*camS+W/2)*dpr, sy=((y+camY)*camS+H/2)*dpr;
   ctx.save();
   ctx.resetTransform();
-  ctx.font=`${bold?'600 ':''}${sz}px "SF Mono",Consolas,monospace`;
+  ctx.font=`${bold?'600 ':''}${sz*dpr}px "SF Mono",Consolas,monospace`;
   ctx.fillStyle=col;ctx.textAlign=align;ctx.textBaseline=base;
   ctx.fillText(s,sx,sy);
   ctx.restore();
@@ -265,7 +266,7 @@ function drawNodesMini(){
       const gx=nd.x+6+col*(gw+4),gy=nd.y+34+row*(gh+5);
       rr(gx,gy,gw,gh,2);
       fillStroke('rgba(249,115,22,0.62)','rgba(249,115,22,0.45)',0.4/camS);
-      txt(`G${g}`,gx+gw/2,gy+gh/2,12,'rgba(255,255,255,0.85)');
+      txt(`GPU ${g}`,gx+gw/2,gy+gh/2,11,'rgba(255,255,255,0.85)');
     }
 
     if(lv.nvlink){
@@ -307,7 +308,7 @@ function drawNodesChip(){
       line(cpu[0][0]+CW, cpuY+CH/2, cpu[1][0], cpuY+CH/2,
            'rgba(147,197,253,0.55)', 1.2/camS);
       pushEdge(cpu[0][0]+CW, cpuY+CH/2, cpu[1][0], cpuY+CH/2, 'upi', 4);
-      txt('UPI',nd.x+58,cpuY+CH/2,11,'rgba(147,197,253,0.5)');
+      txt('UPI Link',nd.x+58,cpuY+CH/2,11,'rgba(147,197,253,0.5)');
     }
 
     const nvSW=NVS_CX.map(dx=>({cx:nd.x+dx,cy:nd.y+NVS_CY}));
@@ -316,7 +317,7 @@ function drawNodesChip(){
       fillStroke('rgba(139,92,246,0.1)','rgba(139,92,246,0.3)',0.4/camS);
       ctx.beginPath();ctx.arc(sw.cx,sw.cy,NVS_R,0,Math.PI*2);
       fillStroke('rgba(139,92,246,0.88)','#a78bfa',0.9/camS);
-      txt(`NVSwitch ${si}`,sw.cx,sw.cy,10,'#fff');
+      txt(`NVSwitch ${si}`,sw.cx,sw.cy,9,'#fff');
 
       if(lv.pcie){
         const ci=si<2?0:1;
@@ -326,7 +327,7 @@ function drawNodesChip(){
         pushEdge(sw.cx, sw.cy-NVS_R, cpx+CW/2, cpy+CH, 'pcie', 4);
       }
     });
-    txt('NVSwitch ×4 — NVLink 4.0 All-to-All Fabric',nd.x+NW/2,nd.y+47,11,'rgba(167,139,250,0.45)');
+    txt('NVSwitch ×4  —  NVLink 4.0 All-to-All Fabric',nd.x+NW/2,nd.y+47,11,'rgba(167,139,250,0.45)');
 
     for(let g=0;g<8;g++){
       const col=g%4,row=Math.floor(g/4);
@@ -351,11 +352,11 @@ function drawNodesChip(){
 
       rr(gx,gy,GW,GH,3);
       fillStroke('rgba(249,115,22,0.82)','#fb923c',0.9/camS);
-      txt(`G${g}`,gx+GW/2,gy+10,13,'#fff',undefined,undefined,true);
+      txt(`GPU ${g}`,gx+GW/2,gy+10,12,'#fff',undefined,undefined,true);
 
       rr(gx+2,gy+GH-9,GW-4,7,1);
       fillStroke('rgba(14,116,144,0.7)','#06b6d4',0.4/camS);
-      txt('HBM 80G',gx+GW/2,gy+GH-5.5,9,'#67e8f9');
+      txt('HBM3 80GB',gx+GW/2,gy+GH-5.5,9,'#67e8f9');
     }
 
     txt('IB NIC ×8 — ConnectX-7 (1 NIC per GPU, GPUDirect RDMA)',nd.x+NW/2,nd.y+NIC_Y-6,11,'rgba(134,239,172,0.35)');
@@ -366,7 +367,7 @@ function drawNodesChip(){
 
       rr(nx2,ny,NIC_W,NIC_H,2);
       fillStroke('rgba(6,78,59,0.78)','#22c55e',0.7/camS);
-      txt(`N${n}`,nx2+NIC_W/2,ny+NIC_H/2,10,'#86efac');
+      txt(`NIC ${n}`,nx2+NIC_W/2,ny+NIC_H/2,9,'#86efac');
 
       if(lv.pcie){
         const gx=nd.x+4+col*GPU_STRIDE;
@@ -390,7 +391,7 @@ export function registerDrawCallbacks(jobsCb, pathCb) {
 }
 
 export function draw(){
-  ctx.clearRect(0,0,W,H);
+  const _dpr=window.devicePixelRatio||1; ctx.clearRect(0,0,W*_dpr,H*_dpr);
   EDGES=[];
   ctx.save();
   ctx.translate(W/2,H/2);
@@ -428,8 +429,13 @@ export function draw(){
 
 // ─── Resize ───────────────────────────────────────────────────────────────────
 export function resize(){
-  W=canvas.width=innerWidth;
-  H=canvas.height=innerHeight;
+  const dpr = window.devicePixelRatio || 1;
+  W = innerWidth;
+  H = innerHeight;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
   draw();
 }
 window.addEventListener('resize', resize);
