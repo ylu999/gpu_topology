@@ -578,37 +578,92 @@ function buildNodesChip() {
       .attr('pointer-events', 'none')
       .text('NVSwitch ×4  —  NVLink 4.0 All-to-All Fabric');
 
-    // GPUs, HBM, NVLink edges, PCIe edges, NICs
+    // ── NVLink Fabric Bus Bars ──────────────────────────────────────────────
+    // Two horizontal bus bars (one per GPU row), NVSwitches tap off vertically.
+    // Much cleaner than 32 crossing lines.
+    const BUS_Y = [GPU_Y[0] - 10, GPU_Y[1] + GH + 10]; // above row0, below row1
+    const BUS_X1 = nd.x + 4 + GW/2;                    // left edge of GPU col 0 center
+    const BUS_X2 = nd.x + 4 + 3*GPU_STRIDE + GW/2;     // right edge of GPU col 3 center
+
+    BUS_Y.forEach((by, row) => {
+      // horizontal bus bar
+      lNvlink.append('line')
+        .attr('class', 'edge-nvlink nvlink-bus')
+        .attr('x1', BUS_X1).attr('y1', by)
+        .attr('x2', BUS_X2).attr('y2', by)
+        .attr('stroke', 'rgba(249,115,22,0.55)').attr('stroke-width', 2)
+        .style('cursor', 'pointer')
+        .attr('data-etype', 'nvlink');
+    });
+
+    // NVSwitch vertical taps to nearest bus bar
+    nvSW.forEach((sw, si) => {
+      // tap to upper bar (row 0) and lower bar (row 1)
+      // upper: from NVSwitch top to BUS_Y[0]
+      lNvlink.append('line')
+        .attr('class', 'edge-nvlink nvlink-tap')
+        .attr('x1', sw.cx).attr('y1', sw.cy - NVS_R)
+        .attr('x2', sw.cx).attr('y2', BUS_Y[0])
+        .attr('stroke', 'rgba(249,115,22,0.4)').attr('stroke-width', 1.2)
+        .style('cursor', 'pointer')
+        .attr('data-etype', 'nvlink');
+      // lower: from NVSwitch bottom to BUS_Y[1]
+      lNvlink.append('line')
+        .attr('class', 'edge-nvlink nvlink-tap')
+        .attr('x1', sw.cx).attr('y1', sw.cy + NVS_R)
+        .attr('x2', sw.cx).attr('y2', BUS_Y[1])
+        .attr('stroke', 'rgba(249,115,22,0.4)').attr('stroke-width', 1.2)
+        .style('cursor', 'pointer')
+        .attr('data-etype', 'nvlink');
+    });
+
+    // PCIe Bus Bars: one bar per CPU, GPUs tap up, NICs tap down
+    const PCIE_BUS_Y = nd.y + 18 + CH + 5; // just below CPUs
+    // horizontal PCIe bar
+    lPcie.append('line')
+      .attr('class', 'edge-pcie pcie-bus')
+      .attr('x1', nd.x + 4).attr('y1', PCIE_BUS_Y)
+      .attr('x2', nd.x + NW - 4).attr('y2', PCIE_BUS_Y)
+      .attr('stroke', 'rgba(139,92,246,0.35)').attr('stroke-width', 1.5)
+      .attr('stroke-dasharray', '4 2')
+      .style('cursor', 'pointer')
+      .attr('data-etype', 'pcie');
+    // CPU taps down to bar
+    cpuPositions.forEach(([cpx, cpy]) => {
+      lPcie.append('line')
+        .attr('class', 'edge-pcie pcie-tap')
+        .attr('x1', cpx + CW/2).attr('y1', cpy + CH)
+        .attr('x2', cpx + CW/2).attr('y2', PCIE_BUS_Y)
+        .attr('stroke', 'rgba(139,92,246,0.35)').attr('stroke-width', 1)
+        .style('cursor', 'pointer')
+        .attr('data-etype', 'pcie');
+    });
+
+    // GPUs, HBM, NVLink stubs, PCIe stubs, NICs
     for (let gi = 0; gi < 8; gi++) {
       const col = gi % 4, row = Math.floor(gi / 4);
       const gx = nd.x + 4 + col * GPU_STRIDE;
       const gy = nd.y + GPU_Y[row];
 
-      // NVLink: GPU → each NVSwitch
-      nvSW.forEach((sw, si) => {
-        const op = 0.22 + si * 0.07;
-        lNvlink.append('line')
-          .attr('class', 'edge-nvlink')
-          .attr('x1', gx + GW/2).attr('y1', gy)
-          .attr('x2', sw.cx).attr('y2', sw.cy + NVS_R)
-          .attr('stroke', `rgba(249,115,22,${op})`).attr('stroke-width', 0.65)
-          .style('cursor', 'pointer')
-          .attr('data-etype', 'nvlink');
-      });
+      // NVLink stub: GPU → bus bar (short vertical line)
+      const busY = BUS_Y[row];
+      lNvlink.append('line')
+        .attr('class', 'edge-nvlink nvlink-stub')
+        .attr('x1', gx + GW/2).attr('y1', row === 0 ? gy : gy + GH)
+        .attr('x2', gx + GW/2).attr('y2', busY)
+        .attr('stroke', 'rgba(249,115,22,0.5)').attr('stroke-width', 1)
+        .style('cursor', 'pointer')
+        .attr('data-etype', 'nvlink');
 
-      // PCIe: GPU → CPU
-      const ci = gi < 4 ? 0 : 1;
-      const [cpx, cpy] = cpuPositions[ci];
+      // PCIe stub: GPU → PCIe bus bar
       lPcie.append('line')
-        .attr('class', 'edge-pcie')
+        .attr('class', 'edge-pcie pcie-stub')
         .attr('x1', gx + GW/2).attr('y1', gy)
-        .attr('x2', cpx + CW * (ci === 0 ? 0.25 : 0.75)).attr('y2', cpy + CH)
-        .attr('stroke', 'rgba(139,92,246,0.25)').attr('stroke-width', 0.5)
-        .attr('stroke-dasharray', '2.5 2')
+        .attr('x2', gx + GW/2).attr('y2', PCIE_BUS_Y)
+        .attr('stroke', 'rgba(139,92,246,0.2)').attr('stroke-width', 0.5)
+        .attr('stroke-dasharray', '2 2')
         .style('cursor', 'pointer')
         .attr('data-etype', 'pcie');
-
-      // GPU rect
       const gg = lChips.append('g')
         .attr('class', 'hit-gpu')
         .attr('data-type', 'gpu')
@@ -675,14 +730,12 @@ function buildNodesChip() {
         .attr('pointer-events', 'none')
         .text(`NIC ${n}`);
 
-      // NIC → GPU (PCIe, shown in pcie layer)
-      const gx = nd.x + 4 + col * GPU_STRIDE;
-      const gy = nd.y + GPU_Y[row];
+      // NIC → PCIe bus bar (short stub up)
       lPcie.append('line')
         .attr('class', 'edge-nic-gpu')
         .attr('x1', nx2 + NIC_W/2).attr('y1', ny)
-        .attr('x2', gx + GW/2).attr('y2', gy + GH)
-        .attr('stroke', 'rgba(34,197,94,0.3)').attr('stroke-width', 0.5)
+        .attr('x2', nx2 + NIC_W/2).attr('y2', PCIE_BUS_Y)
+        .attr('stroke', 'rgba(34,197,94,0.35)').attr('stroke-width', 0.6)
         .attr('stroke-dasharray', '1.5 2')
         .style('cursor', 'pointer')
         .attr('data-etype', 'ib');
