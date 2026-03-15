@@ -2,6 +2,8 @@
 body{background:#070c18;color:#e2e8f0;font-family:'SF Mono',Consolas,monospace;overflow:hidden;width:100vw;height:100vh;user-select:none}
 #sv{display:block;cursor:grab;background:#070c18}
 #sv.dragging{cursor:grabbing}
+/* All SVG lines/paths keep fixed screen-pixel width regardless of zoom */
+#sv line, #sv path, #sv circle, #sv rect { vector-effect: non-scaling-stroke; }
 #ui{position:fixed;inset:0;pointer-events:none;z-index:10}
 #title{position:absolute;top:16px;left:18px}
 #title h1{font-size:15px;font-weight:600;letter-spacing:.1em;color:#60a5fa;text-transform:uppercase}
