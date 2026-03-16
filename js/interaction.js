@@ -120,8 +120,37 @@ window.toggleFragMode = function(btn) {
   draw();
 };
 
+// ─── AllReduce Bandwidth Calculator ──────────────────────────────────────────
+// Ring-AllReduce effective bandwidth ≈ link_bw × (N-1)/N × 2 (bidirectional)
+// Bottleneck = slowest link in the path
+const AR_PROFILES = {
+  node:     { link:'NVLink 4.0',        bw:900,  color:'#f97316', pct:100, note:'节点内 NVSwitch All-to-All Fabric，任意两 GPU 直连，延迟 < 1 μs。AllReduce 效率最高，是 scale-up 通信的理想场景。' },
+  rack:     { link:'InfiniBand NDR',     bw:50,   color:'#06b6d4', pct:5.5, note:'GPUDirect RDMA 经 ToR Switch，无需 CPU 参与。带宽约为 NVLink 的 1/18，跨节点通信成本显著上升，AllReduce 成为瓶颈。' },
+  pod:      { link:'InfiniBand Fat-Tree',bw:50,   color:'#8b5cf6', pct:5.5, note:'Pod 内 1:1 无阻塞 Fat-Tree，ECMP 多路径均衡，无热点。大规模训练（如 LLM 预训练）的标准部署域，gang scheduling 保证 Job 不出 Pod。' },
+  crosspod: { link:'Ethernet Core',      bw:10,   color:'#22c55e', pct:1.1, note:'IB → Ethernet 协议切换，延迟跳升至 5-10 μs，带宽降至 ~10 GB/s。⚠️ 应尽量避免——大规模训练严禁跨 Pod，否则 AllReduce 拖垮整体吞吐。' },
+};
+
+window.updateAllReduce = function() {
+  const n        = +document.getElementById('ar-gpu-count').value;
+  const placement = document.getElementById('ar-placement').value;
+  const p        = AR_PROFILES[placement];
+
+  // Ring-AllReduce: effective bw = link_bw × 2(N-1)/N  (send + recv)
+  // For large N: ≈ 2 × link_bw; we show per-GPU bandwidth
+  const eff = p.bw * 2 * (n - 1) / n;
+  const effStr = eff >= 1000 ? (eff/1000).toFixed(1)+' TB/s' : Math.round(eff)+' GB/s';
+
+  document.getElementById('ar-link-type').textContent = `${p.link}  ·  ${n} GPU`;
+  document.getElementById('ar-bw-label').textContent  = effStr;
+  document.getElementById('ar-bw-label').style.color  = p.color;
+  document.getElementById('ar-bw-bar').style.width    = p.pct + '%';
+  document.getElementById('ar-bw-bar').style.background = p.color;
+  document.getElementById('ar-note').textContent      = p.note;
+};
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 resize();
 buildScene();
 updateJobPanel();
+window.updateAllReduce(); // init calculator
 setTimeout(() => goLayer('zone'), 60);

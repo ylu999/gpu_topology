@@ -138,7 +138,46 @@
       <button id="frag-btn" onclick="toggleFragMode(this)" style="background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);color:#fde68a;border-radius:4px;padding:6px 10px;font-size:11px;cursor:pointer;font-family:inherit">碎片</button>
     </div>
     <!-- Job list -->
-    <div id="job-list" style="max-height:180px;overflow-y:auto"></div>
+    <div id="job-list" style="max-height:140px;overflow-y:auto"></div>
+
+    <!-- AllReduce Bandwidth Calculator -->
+    <div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.07)">
+      <div style="font-size:9px;color:#475569;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">⚡ AllReduce 带宽估算</div>
+      <div style="display:flex;gap:6px;margin-bottom:8px;align-items:flex-end">
+        <div style="flex:1">
+          <div style="font-size:8px;color:#475569;margin-bottom:3px">GPU 数量</div>
+          <select id="ar-gpu-count" onchange="updateAllReduce()" style="width:100%;background:#111827;border:1px solid rgba(255,255,255,0.15);color:#e2e8f0;border-radius:4px;padding:5px 6px;font-size:11px;font-family:inherit">
+            <option value="8">8 GPU (1节点)</option>
+            <option value="16">16 GPU (2节点)</option>
+            <option value="32">32 GPU (4节点)</option>
+            <option value="64">64 GPU (1 Pod)</option>
+            <option value="128">128 GPU (2 Pod)</option>
+            <option value="256">256 GPU</option>
+            <option value="512">512 GPU</option>
+            <option value="1024">1024 GPU</option>
+          </select>
+        </div>
+        <div style="flex:1">
+          <div style="font-size:8px;color:#475569;margin-bottom:3px">部署方式</div>
+          <select id="ar-placement" onchange="updateAllReduce()" style="width:100%;background:#111827;border:1px solid rgba(255,255,255,0.15);color:#e2e8f0;border-radius:4px;padding:5px 6px;font-size:11px;font-family:inherit">
+            <option value="node">同节点</option>
+            <option value="rack">同 Rack</option>
+            <option value="pod" selected>同 Pod</option>
+            <option value="crosspod">跨 Pod</option>
+          </select>
+        </div>
+      </div>
+      <div id="ar-result" style="background:rgba(255,255,255,0.03);border-radius:6px;padding:8px 10px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+          <span id="ar-link-type" style="font-size:10px;color:#94a3b8"></span>
+          <span id="ar-bw-label" style="font-size:14px;font-weight:700"></span>
+        </div>
+        <div style="background:rgba(255,255,255,0.06);border-radius:3px;height:5px;margin-bottom:6px;overflow:hidden">
+          <div id="ar-bw-bar" style="height:100%;border-radius:3px;transition:width .35s ease,background .35s ease"></div>
+        </div>
+        <div id="ar-note" style="font-size:9px;color:#64748b;line-height:1.55"></div>
+      </div>
+    </div>
   </div>
 
   <!-- Path trace result panel -->
